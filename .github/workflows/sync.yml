@@ -1,0 +1,55 @@
+name: Sync Canvas Assignments
+
+on:
+  # 每天 00:00 (UTC+8 即 16:00 UTC) 自动拉一次
+  schedule:
+    - cron: "0 16 * * *"
+  # 允许在 Actions 页面手动点 “Run workflow” 立刻刷新（调试用）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch from Canvas & render site
+        env:
+          # 这两个值来自仓库 Settings → Secrets and variables → Actions
+          CANVAS_API_URL: ${{ secrets.CANVAS_API_URL }}
+          CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
+          WEEKS_BACK: "12"
+        run: python fetch_canvas.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact: pages-artifact

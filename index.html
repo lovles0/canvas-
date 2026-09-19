@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>当周作业</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#fff; --ink:#1f2430; --muted:#6b7280;
+    --line:#e7e9f0; --brand:#2563eb; --warn:#f59e0b; --late:#ef4444;
+    --ok:#16a34a; --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.04);
+    --radius:14px;
+  }
+  [data-theme="dark"]{
+    --bg:#0f172a; --card:#1e293b; --ink:#e5e9f0; --muted:#94a3b8;
+    --line:#2b3648; --brand:#60a5fa; --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:16px 16px 64px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 16px}
+  h1{font-size:1.25rem;margin:0;font-weight:700}
+  .sub{color:var(--muted);font-size:.8rem;margin-top:2px}
+  .iconbtn{
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    width:40px;height:40px;border-radius:10px;font-size:1.1rem;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
+  }
+  /* 周切换器 */
+  .weekbar{
+    position:sticky;top:0;z-index:10;background:var(--bg);
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:10px 0;border-bottom:1px solid var(--line);margin-bottom:14px;
+  }
+  .weeknav{
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:10px;width:42px;height:42px;font-size:1.2rem;cursor:pointer;box-shadow:var(--shadow);
+  }
+  .weeklabel{text-align:center;min-width:0}
+  .weeklabel .range{font-weight:600;font-size:1rem;white-space:nowrap}
+  .weeklabel .tag{font-size:.72rem;color:var(--muted)}
+  /* 筛选 chips */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+  .chip{
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:999px;padding:6px 12px;font-size:.82rem;cursor:pointer;box-shadow:var(--shadow);
+    display:flex;align-items:center;gap:6px;
+  }
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  /* 课程分组 */
+  .course{margin-bottom:18px}
+  .coursehead{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-weight:700;font-size:.98rem}
+  .coursehead .bar{width:4px;height:18px;border-radius:2px;flex:none}
+  .coursehead .cnt{color:var(--muted);font-weight:400;font-size:.78rem;margin-left:auto}
+  /* 作业卡片 */
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:12px 12px 12px 14px;margin-bottom:10px;
+    display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
+  }
+  .card .body{min-width:0;flex:1;cursor:pointer}
+  .card .title{font-weight:600;font-size:.96rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .meta{color:var(--muted);font-size:.78rem;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+  .badge{
+    font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;flex:none;white-space:nowrap;
+  }
+  .badge.ok{background:rgba(22,163,74,.14);color:var(--ok)}
+  .badge.warn{background:rgba(245,158,11,.16);color:var(--warn)}
+  .badge.late{background:rgba(239,68,68,.14);color:var(--late)}
+  .badge.none{background:rgba(107,114,128,.14);color:var(--muted)}
+  /* 打勾 */
+  .check{
+    flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);
+    background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    font-size:.9rem;color:transparent;transition:all .15s;
+  }
+  .check.done{background:var(--ok);border-color:var(--ok);color:#fff}
+  .card.done .title{text-decoration:line-through;color:var(--muted)}
+  .empty{color:var(--muted);text-align:center;padding:48px 16px;font-size:.9rem}
+  .footnote{color:var(--muted);font-size:.72rem;text-align:center;margin-top:24px}
+  @media(min-width:720px){
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>当周作业</h1>
+      <div class="sub" id="sub">加载中…</div>
+    </div>
+    <button class="iconbtn" id="themeBtn" title="切换深浅色">🌙</button>
+  </header>
+
+  <div class="weekbar">
+    <button class="weeknav" id="prevWk">‹</button>
+    <div class="weeklabel">
+      <div class="range" id="range">—</div>
+      <div class="tag" id="weekTag">—</div>
+    </div>
+    <button class="weeknav" id="nextWk">›</button>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div id="list"></div>
+  <div class="footnote" id="foot"></div>
+</div>
+
+<script id="data" type="application/json">__DATA_JSON__</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('data').textContent);
+  const TZ = DATA.timezone_offset || "+08:00";
+
+  // ---- 周工具（按本地时区，周一为一周起点）----
+  function startOfWeek(d){
+    const x = new Date(d);
+    const day = (x.getDay()+6)%7; // 周一=0
+    x.setHours(0,0,0,0);
+    x.setDate(x.getDate()-day);
+    return x;
+  }
+  function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function fmt(d){ return d.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}); }
+
+  // 当前周（以数据生成时间对齐，避免“今天”漂移）
+  const genWeek = startOfWeek(new Date(DATA.generated_at));
+  let curWeek = new Date(genWeek);
+  const today = new Date();
+
+  // ---- 本地存储：已完成标记（按 course:assignment id）----
+  function doneKey(c,a){ return c+'|'+a; }
+  function loadDone(){
+    try{ return new Set(JSON.parse(localStorage.getItem('done_v1')||'[]')); }catch(e){ return new Set(); }
+  }
+  function saveDone(s){ try{ localStorage.setItem('done_v1', JSON.stringify([...s])); }catch(e){} }
+  const done = loadDone();
+
+  // 已选课程（默认全选）
+  let activeCourses = new Set(DATA.courses.map(c=>c.id));
+
+  // ---- 渲染 chips ----
+  const chipsEl = document.getElementById('chips');
+  function renderChips(){
+    chipsEl.innerHTML='';
+    const all = document.createElement('button');
+    all.className='chip'+(activeCourses.size===DATA.courses.length?' on':'');
+    all.textContent='全部';
+    all.onclick=()=>{ activeCourses = new Set(DATA.courses.map(c=>c.id)); renderChips(); renderList(); };
+    chipsEl.appendChild(all);
+    DATA.courses.forEach(c=>{
+      const b=document.createElement('button');
+      b.className='chip'+(activeCourses.has(c.id)?' on':'');
+      b.innerHTML=`<span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}`;
+      b.onclick=()=>{ if(activeCourses.has(c.id)) activeCourses.delete(c.id); else activeCourses.add(c.id); renderChips(); renderList(); };
+      chipsEl.appendChild(b);
+    });
+  }
+
+  // ---- 渲染列表 ----
+  const listEl = document.getElementById('list');
+  const rangeEl = document.getElementById('range');
+  const weekTagEl = document.getElementById('weekTag');
+
+  function dueBadge(dueIso){
+    if(!dueIso) return {cls:'none', txt:'无截止'};
+    const due = new Date(dueIso);
+    const diffMs = due - today;
+    const diffH = diffMs/36e5;
+    if(diffH < 0) return {cls:'late', txt:'已逾期'};
+    if(diffH < 24) return {cls:'warn', txt:'今天截止'};
+    const days = Math.ceil(diffH/24);
+    return {cls: days<=1?'warn':'ok', txt:`还剩 ${days} 天`};
+  }
+
+  function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+  function renderList(){
+    // 周范围文本
+    const ws = new Date(curWeek), we = addDays(ws,6);
+    rangeEl.textContent = `${fmt(ws)} – ${fmt(we)}`;
+    const isCur = ws.getTime()===genWeek.getTime();
+    const diffWeeks = Math.round((ws - genWeek)/ (7*864e5));
+    weekTagEl.textContent = isCur?'本周':(diffWeeks<0?`${-diffWeeks} 周前`:`未来 ${diffWeeks} 周`);
+
+    // 收集本周作业
+    const wsTs = ws.getTime(), weTs = addDays(we,1).getTime();
+    let any = false;
+    let html = '';
+    DATA.courses.forEach(c=>{
+      if(!activeCourses.has(c.id)) return;
+      const items = c.assignments.filter(a=>{
+        if(!a.due_at) return false;
+        const t = new Date(a.due_at).getTime();
+        return t>=wsTs && t<weTs;
+      });
+      if(items.length===0) return;
+      any = true;
+      // 按截止时间排序
+      items.sort((x,y)=> new Date(x.due_at)-new Date(y.due_at));
+      html += `<div class="course">
+        <div class="coursehead"><span class="bar" style="background:${c.color}"></span>${escapeHtml(c.name)}<span class="cnt">${items.length} 项</span></div>
+        <div class="grid">`;
+      items.forEach(a=>{
+        const dk = doneKey(c.id,a.id);
+        const isDone = done.has(dk) || a.submitted;
+        const b = dueBadge(a.due_at);
+        const dueTxt = a.due_at? new Date(a.due_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+        html += `<div class="card${isDone?' done':''}" data-dk="${dk}">
+          <button class="check${isDone?' done':''}" aria-label="标记完成">✓</button>
+          <div class="body" data-url="${a.html_url}" data-desc="${escapeHtml(a.description||'')}">
+            <div class="title">${escapeHtml(a.title)}</div>
+            <div class="meta"><span>${dueTxt}</span><span class="badge ${b.cls}">${b.txt}</span></div>
+          </div>
+        </div>`;
+      });
+      html += `</div></div>`;
+    });
+    if(!any){
+      html = `<div class="empty">这一周没有作业 🎉</div>`;
+    }
+    listEl.innerHTML = html;
+
+    // 绑定事件
+    listEl.querySelectorAll('.check').forEach(btn=>{
+      btn.onclick=(e)=>{
+        e.stopPropagation();
+        const dk = btn.closest('.card').dataset.dk;
+        if(done.has(dk)) done.delete(dk); else done.add(dk);
+        saveDone(done); renderList();
+      };
+    });
+    listEl.querySelectorAll('.body').forEach(el=>{
+      el.onclick=()=>{
+        const desc = el.dataset.desc;
+        if(desc) alert(desc);
+        window.open(el.dataset.url,'_blank');
+      };
+    });
+  }
+
+  // ---- 副标题 / 脚注 ----
+  document.getElementById('sub').textContent =
+    `共 ${DATA.courses.length} 门课 · 更新于 ${new Date(DATA.generated_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}`;
+  document.getElementById('foot').textContent =
+    `数据由 GitHub Actions 定时从 Canvas 同步 · 时区 ${TZ} · 点击卡片打开 Canvas 原链接`;
+
+  // ---- 周导航 ----
+  document.getElementById('prevWk').onclick=()=>{ curWeek=addDays(curWeek,-7); renderList(); };
+  document.getElementById('nextWk').onclick=()=>{ curWeek=addDays(curWeek,7); renderList(); };
+
+  // ---- 主题 ----
+  const themeBtn=document.getElementById('themeBtn');
+  const savedTheme=localStorage.getItem('theme');
+  const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let theme = savedTheme || (prefersDark?'dark':'light');
+  function applyTheme(t){ document.documentElement.setAttribute('data-theme',t); themeBtn.textContent = t==='dark'?'☀️':'🌙'; }
+  applyTheme(theme);
+  themeBtn.onclick=()=>{ theme = theme==='dark'?'light':'dark'; localStorage.setItem('theme',theme); applyTheme(theme); };
+
+  renderChips();
+  renderList();
+})();
+</script>
+</body>
+</html>
