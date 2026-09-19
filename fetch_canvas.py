@@ -39,44 +39,71 @@ MAX_ASSIGNMENTS_PER_COURSE = int(os.environ.get("MAX_ASSIGNMENTS", "100"))
 # 请求间隔，避免触发 Canvas rate limit（秒）
 REQUEST_DELAY = 0.5
 
+# 网络抖动、限流或 Canvas 服务端临时错误时的最大尝试次数
+MAX_REQUEST_ATTEMPTS = int(os.environ.get("MAX_REQUEST_ATTEMPTS", "3"))
+RETRY_BASE_DELAY = float(os.environ.get("RETRY_BASE_DELAY", "2"))
+
 OUT_DIR = os.environ.get("OUT_DIR", "dist")
 
 
-def api_get(path, params=None):
-    """带 token 的 GET 请求，返回解析后的 JSON。"""
+def build_url(path, params=None):
+    """构造 Canvas API URL。"""
     url = f"{API_BASE}{path}"
     if params:
-        url += "?" + "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+        url += "?" + urllib.parse.urlencode(params)
+    return url
+
+
+def request_json(url):
+    """带重试的 GET 请求，返回 JSON 和响应头。"""
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {TOKEN}",
         "Accept": "application/json",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+
+    for attempt in range(1, MAX_REQUEST_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+                return payload, resp.headers
+        except urllib.error.HTTPError as exc:
+            # 认证、权限等客户端错误重试没有意义；限流除外。
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            if not retryable or attempt == MAX_REQUEST_ATTEMPTS:
+                raise
+            retry_after = exc.headers.get("Retry-After")
+            delay = float(retry_after) if retry_after and retry_after.isdigit() else RETRY_BASE_DELAY * (2 ** (attempt - 1))
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == MAX_REQUEST_ATTEMPTS:
+                raise
+            delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+
+        print(f"[warn] 请求失败，{delay:g} 秒后进行第 {attempt + 1}/{MAX_REQUEST_ATTEMPTS} 次尝试: {url}", file=sys.stderr)
+        time.sleep(delay)
+
+
+def api_get(path, params=None):
+    """带 token 的 GET 请求，返回解析后的 JSON。"""
+    payload, _ = request_json(build_url(path, params))
+    return payload
 
 
 def page_all(path, params=None, key="data"):
     """处理 Canvas 的 Link 头分页，把所有页拉全。"""
-    url = f"{API_BASE}{path}"
-    if params:
-        url += "?" + "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    url = build_url(path, params)
     all_items = []
     while url:
-        req = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {TOKEN}",
-            "Accept": "application/json",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            items = json.loads(resp.read().decode("utf-8"))
-            # 兼容返回列表 或 {"data": [...]}
-            if isinstance(items, dict):
-                items = items.get(key, [])
-            all_items.extend(items)
-            # 取下一页
-            url = resp.headers.get("Link", "")
-            url = _next_url(url)
-            if url:
-                time.sleep(REQUEST_DELAY)
+        items, headers = request_json(url)
+        # 兼容返回列表 或 {"data": [...]}
+        if isinstance(items, dict):
+            items = items.get(key, [])
+        if not isinstance(items, list):
+            raise ValueError(f"Canvas API 返回了非列表数据: {url}")
+        all_items.extend(items)
+        # 取下一页
+        url = _next_url(headers.get("Link", ""))
+        if url:
+            time.sleep(REQUEST_DELAY)
     return all_items
 
 
@@ -99,6 +126,18 @@ def local_week_start(dt):
     return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def json_for_html_script(value):
+    """将 JSON 安全地放进 HTML 的 script 文本节点。"""
+    return (
+        json.dumps(value, ensure_ascii=False)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def main():
     if not API_BASE or not TOKEN:
         print("错误：环境变量 CANVAS_API_URL 或 CANVAS_TOKEN 未设置", file=sys.stderr)
@@ -112,11 +151,12 @@ def main():
     print(f"[info] 拉取范围起点(周一起): {week_cutoff.date()}")
 
     # 1) 拉所有在读课程
-    courses = api_get("/api/v1/courses", {"enrollment_state": "active", "per_page": 100})
+    courses = page_all("/api/v1/courses", {"enrollment_state": "active", "per_page": 100})
     print(f"[info] 在读课程数: {len(courses)}")
     time.sleep(REQUEST_DELAY)
 
     out_courses = []
+    failed_courses = []
     for c in courses:
         course_id = c.get("id")
         course_name = c.get("name") or "未命名课程"
@@ -133,6 +173,7 @@ def main():
             )
         except Exception as e:
             print(f"[warn] 课程 {course_name} 拉作业失败: {e}", file=sys.stderr)
+            failed_courses.append(course_name)
             assignments = []
         time.sleep(REQUEST_DELAY)
 
@@ -179,6 +220,11 @@ def main():
             })
         print(f"[info]   {course_name}: {len(items)} 条作业")
 
+    # 不发布缺课程的残缺数据；Actions 失败时，GitHub Pages 会保留上一版。
+    if failed_courses:
+        names = "、".join(failed_courses)
+        raise RuntimeError(f"以下课程同步失败，已取消本次部署: {names}")
+
     # 3) 组装 data.json
     data = {
         "generated_at": now.isoformat(),
@@ -197,7 +243,9 @@ def main():
     template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
-    html = template.replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
+    # JSON 位于 <script> 中，必须转义 HTML 特殊字符，避免 Canvas 文本提前闭合脚本标签。
+    inline_json = json_for_html_script(data)
+    html = template.replace("__DATA_JSON__", inline_json)
     html_path = os.path.join(OUT_DIR, "index.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)

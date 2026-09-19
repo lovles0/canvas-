@@ -29,7 +29,7 @@
   .sub{color:var(--muted);font-size:.8rem;margin-top:2px}
   .iconbtn{
     border:1px solid var(--line);background:var(--card);color:var(--ink);
-    width:40px;height:40px;border-radius:10px;font-size:1.1rem;cursor:pointer;
+    width:44px;height:44px;border-radius:10px;font-size:1.1rem;cursor:pointer;
     display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
   }
   /* 周切换器 */
@@ -40,7 +40,7 @@
   }
   .weeknav{
     border:1px solid var(--line);background:var(--card);color:var(--ink);
-    border-radius:10px;width:42px;height:42px;font-size:1.2rem;cursor:pointer;box-shadow:var(--shadow);
+    border-radius:10px;width:44px;height:44px;font-size:1.2rem;cursor:pointer;box-shadow:var(--shadow);
   }
   .weeklabel{text-align:center;min-width:0}
   .weeklabel .range{font-weight:600;font-size:1rem;white-space:nowrap}
@@ -50,7 +50,7 @@
   .chip{
     border:1px solid var(--line);background:var(--card);color:var(--ink);
     border-radius:999px;padding:6px 12px;font-size:.82rem;cursor:pointer;box-shadow:var(--shadow);
-    display:flex;align-items:center;gap:6px;
+    display:flex;align-items:center;gap:6px;min-height:44px;
   }
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
@@ -66,6 +66,7 @@
     display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
   }
   .card .body{min-width:0;flex:1;cursor:pointer}
+  .card a.body{color:inherit;text-decoration:none}
   .card .title{font-weight:600;font-size:.96rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .card .meta{color:var(--muted);font-size:.78rem;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
   .badge{
@@ -77,7 +78,7 @@
   .badge.none{background:rgba(107,114,128,.14);color:var(--muted)}
   /* 打勾 */
   .check{
-    flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);
+    flex:none;width:44px;height:44px;border-radius:50%;border:2px solid var(--line);
     background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;
     font-size:.9rem;color:transparent;transition:all .15s;
   }
@@ -85,6 +86,12 @@
   .card.done .title{text-decoration:line-through;color:var(--muted)}
   .empty{color:var(--muted);text-align:center;padding:48px 16px;font-size:.9rem}
   .footnote{color:var(--muted);font-size:.72rem;text-align:center;margin-top:24px}
+  button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  @media(max-width:480px){
+    .wrap{padding:12px max(12px,env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+    .card{align-items:flex-start}
+    .card .title{white-space:normal;overflow-wrap:anywhere}
+  }
   @media(min-width:720px){
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   }
@@ -97,16 +104,16 @@
       <h1>当周作业</h1>
       <div class="sub" id="sub">加载中…</div>
     </div>
-    <button class="iconbtn" id="themeBtn" title="切换深浅色">🌙</button>
+    <button class="iconbtn" id="themeBtn" title="切换深浅色" aria-label="切换深浅色">🌙</button>
   </header>
 
   <div class="weekbar">
-    <button class="weeknav" id="prevWk">‹</button>
+    <button class="weeknav" id="prevWk" aria-label="上一周">‹</button>
     <div class="weeklabel">
       <div class="range" id="range">—</div>
       <div class="tag" id="weekTag">—</div>
     </div>
-    <button class="weeknav" id="nextWk">›</button>
+    <button class="weeknav" id="nextWk" aria-label="下一周">›</button>
   </div>
 
   <div class="chips" id="chips"></div>
@@ -182,7 +189,8 @@
     return {cls: days<=1?'warn':'ok', txt:`还剩 ${days} 天`};
   }
 
-  function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+  function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+  function safeColor(s){ return /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(s||'') ? s : '#888888'; }
 
   function renderList(){
     // 周范围文本
@@ -199,28 +207,33 @@
     DATA.courses.forEach(c=>{
       if(!activeCourses.has(c.id)) return;
       const items = c.assignments.filter(a=>{
-        if(!a.due_at) return false;
+        // 无截止时间作业只在本周展示，避免每周重复出现。
+        if(!a.due_at) return isCur;
         const t = new Date(a.due_at).getTime();
         return t>=wsTs && t<weTs;
       });
       if(items.length===0) return;
       any = true;
       // 按截止时间排序
-      items.sort((x,y)=> new Date(x.due_at)-new Date(y.due_at));
+      items.sort((x,y)=>{
+        if(!x.due_at) return 1;
+        if(!y.due_at) return -1;
+        return new Date(x.due_at)-new Date(y.due_at);
+      });
       html += `<div class="course">
-        <div class="coursehead"><span class="bar" style="background:${c.color}"></span>${escapeHtml(c.name)}<span class="cnt">${items.length} 项</span></div>
+        <div class="coursehead"><span class="bar" style="background:${safeColor(c.color)}"></span>${escapeHtml(c.name)}<span class="cnt">${items.length} 项</span></div>
         <div class="grid">`;
       items.forEach(a=>{
         const dk = doneKey(c.id,a.id);
         const isDone = done.has(dk) || a.submitted;
         const b = dueBadge(a.due_at);
-        const dueTxt = a.due_at? new Date(a.due_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
-        html += `<div class="card${isDone?' done':''}" data-dk="${dk}">
+        const dueTxt = a.due_at? new Date(a.due_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未设置截止时间';
+        html += `<div class="card${isDone?' done':''}" data-dk="${escapeHtml(dk)}">
           <button class="check${isDone?' done':''}" aria-label="标记完成">✓</button>
-          <div class="body" data-url="${a.html_url}" data-desc="${escapeHtml(a.description||'')}">
+          <a class="body" href="${escapeHtml(a.html_url||'#')}" target="_blank" rel="noopener noreferrer">
             <div class="title">${escapeHtml(a.title)}</div>
             <div class="meta"><span>${dueTxt}</span><span class="badge ${b.cls}">${b.txt}</span></div>
-          </div>
+          </a>
         </div>`;
       });
       html += `</div></div>`;
@@ -237,13 +250,6 @@
         const dk = btn.closest('.card').dataset.dk;
         if(done.has(dk)) done.delete(dk); else done.add(dk);
         saveDone(done); renderList();
-      };
-    });
-    listEl.querySelectorAll('.body').forEach(el=>{
-      el.onclick=()=>{
-        const desc = el.dataset.desc;
-        if(desc) alert(desc);
-        window.open(el.dataset.url,'_blank');
       };
     });
   }

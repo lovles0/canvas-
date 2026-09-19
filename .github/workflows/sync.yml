@@ -1,6 +1,9 @@
 name: Sync Canvas Assignments
 
 on:
+  # main 分支更新后立即重新生成并部署
+  push:
+    branches: [main]
   # 每天 00:00 (UTC+8 即 16:00 UTC) 自动拉一次
   schedule:
     - cron: "0 16 * * *"
