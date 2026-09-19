@@ -138,6 +138,12 @@ def json_for_html_script(value):
     )
 
 
+def assignment_title(assignment):
+    """兼容 Canvas 正式字段 name 与部分实例可能返回的 title。"""
+    title = assignment.get("name") or assignment.get("title") or ""
+    return str(title).strip() or "未命名作业"
+
+
 def main():
     if not API_BASE or not TOKEN:
         print("错误：环境变量 CANVAS_API_URL 或 CANVAS_TOKEN 未设置", file=sys.stderr)
@@ -191,7 +197,7 @@ def main():
                 continue
             items.append({
                 "id": a.get("id"),
-                "title": a.get("title") or "未命名作业",
+                "title": assignment_title(a),
                 "due_at": due_dt.isoformat(),
                 "submitted": bool(a.get("submission", {}).get("submitted_at")) if a.get("submission") else False,
                 "state": a.get("state"),
@@ -203,7 +209,7 @@ def main():
             if not a.get("due_at"):
                 items.append({
                     "id": a.get("id"),
-                    "title": a.get("title") or "未命名作业",
+                    "title": assignment_title(a),
                     "due_at": None,
                     "submitted": bool(a.get("submission", {}).get("submitted_at")) if a.get("submission") else False,
                     "state": a.get("state"),
