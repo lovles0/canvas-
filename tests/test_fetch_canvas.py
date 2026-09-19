@@ -93,7 +93,8 @@ class FetchCanvasTests(unittest.TestCase):
         })
         reminder = feed["items"][0]
         self.assertEqual(reminder["uid"], "canvas:1:assignment:2")
-        self.assertEqual(reminder["remind_at"], "2026-09-20T20:00:00+08:00")
+        self.assertEqual(reminder["due_at"], "2026年09月21日 20:00")
+        self.assertEqual(reminder["remind_at"], "2026年09月20日 20:00")
         self.assertIn("完成 第一章", reminder["notes"])
         self.assertNotIn("<p>", reminder["notes"])
 

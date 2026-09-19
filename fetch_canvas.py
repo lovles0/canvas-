@@ -267,12 +267,15 @@ def build_reminders_data(data):
             source_id = item.get("source_id") or item.get("id")
             uid = f"canvas:{course.get('id')}:{item_type}:{source_id}"
             due_at = item.get("due_at")
+            due_for_shortcuts = None
             remind_at = None
             if due_at:
                 try:
-                    remind_at = (
-                        datetime.fromisoformat(due_at.replace("Z", "+00:00")) - timedelta(hours=24)
-                    ).isoformat()
+                    due_datetime = datetime.fromisoformat(due_at.replace("Z", "+00:00")).astimezone(LOCAL_TZ)
+                    # iOS 快捷指令在中文系统中不能稳定解析带时区的 ISO 8601 文本。
+                    # 使用本地化的纯数字日期，可由“从输入中获取日期”可靠转换为日期对象。
+                    due_for_shortcuts = due_datetime.strftime("%Y年%m月%d日 %H:%M")
+                    remind_at = (due_datetime - timedelta(hours=24)).strftime("%Y年%m月%d日 %H:%M")
                 except (AttributeError, TypeError, ValueError):
                     pass
             description = html_to_text(item.get("description"))[:400]
@@ -286,7 +289,7 @@ def build_reminders_data(data):
                 "course": course.get("name") or "未命名课程",
                 "type": item_type,
                 "type_label": item.get("type_label") or "作业",
-                "due_at": due_at,
+                "due_at": due_for_shortcuts,
                 "remind_at": remind_at,
                 "completed": bool(item.get("completed")),
                 "url": item.get("html_url") or "",
