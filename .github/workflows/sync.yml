@@ -39,6 +39,8 @@ jobs:
           # 这两个值来自仓库 Settings → Secrets and variables → Actions
           CANVAS_API_URL: ${{ secrets.CANVAS_API_URL }}
           CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           WEEKS_BACK: "12"
         run: python fetch_canvas.py
 

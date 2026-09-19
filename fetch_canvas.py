@@ -16,6 +16,7 @@ fetch_canvas.py — 从学校 Canvas 拉取课程与作业，生成 dist/data.js
 
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.request
@@ -469,11 +470,25 @@ def main():
         template = f.read()
     # JSON 位于 <script> 中，必须转义 HTML 特殊字符，避免 Canvas 文本提前闭合脚本标签。
     inline_json = json_for_html_script(data)
-    html = template.replace("__DATA_JSON__", inline_json)
+    sync_config = {
+        "supabase_url": os.environ.get("SUPABASE_URL", "").rstrip("/"),
+        # Supabase anon key 设计为浏览器公开值；权限由数据库函数限制。
+        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
+    }
+    html = (
+        template
+        .replace("__DATA_JSON__", inline_json)
+        .replace("__SYNC_CONFIG__", json_for_html_script(sync_config))
+    )
     html_path = os.path.join(OUT_DIR, "index.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"[ok] 已生成 {html_path}")
+
+    app_source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.js")
+    app_output = os.path.join(OUT_DIR, "app.js")
+    shutil.copyfile(app_source, app_output)
+    print(f"[ok] 已生成 {app_output}")
 
     guide_template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apple-reminders.html")
     guide_output = os.path.join(OUT_DIR, "apple-reminders.html")
