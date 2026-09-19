@@ -267,6 +267,9 @@ def build_reminders_data(data):
             source_id = item.get("source_id") or item.get("id")
             uid = f"canvas:{course.get('id')}:{item_type}:{source_id}"
             due_at = item.get("due_at")
+            # 此订阅只生成“截止提醒”；无截止时间的项目继续保留在网页中。
+            if not due_at:
+                continue
             due_for_shortcuts = None
             remind_at = None
             if due_at:

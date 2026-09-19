@@ -98,6 +98,16 @@ class FetchCanvasTests(unittest.TestCase):
         self.assertIn("完成 第一章", reminder["notes"])
         self.assertNotIn("<p>", reminder["notes"])
 
+    def test_reminders_skip_items_without_due_date(self):
+        feed = fetch_canvas.build_reminders_data({
+            "courses": [{
+                "id": 1,
+                "name": "神经工程",
+                "assignments": [{"id": 2, "title": "阅读材料", "due_at": None}],
+            }],
+        })
+        self.assertEqual(feed["items"], [])
+
     def test_inline_json_cannot_close_script(self):
         encoded = fetch_canvas.json_for_html_script({"name": "</script><script>alert(1)</script>"})
         self.assertNotIn("</script>", encoded)
