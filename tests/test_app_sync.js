@@ -114,11 +114,13 @@ const mergedInvalidTimestamp = mergeGroup(
 assert.strictEqual(mergedInvalidTimestamp.a.value, true);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(mergedInvalidTimestamp.b)), { value: true, updatedAt: 0 });
 
-const assignment = data.courses[0].assignments[0];
-assert.strictEqual(todoGroup(assignment, new Date('2026-09-19T23:45:00+08:00')), 'tomorrow');
-assert.strictEqual(todoGroup(assignment, new Date('2026-09-20T00:31:00+08:00')), 'overdue');
-assert.strictEqual(dueBadge(assignment, false, new Date('2026-09-19T23:45:00+08:00')).cls, 'warn');
-assert.strictEqual(dueBadge(assignment, false, new Date('2026-09-20T00:31:00+08:00')).cls, 'late');
+const assignment = { due_at: new Date(2026, 8, 20, 0, 30).toISOString() };
+const beforeMidnight = new Date(2026, 8, 19, 23, 45);
+const afterDeadline = new Date(2026, 8, 20, 0, 31);
+assert.strictEqual(todoGroup(assignment, beforeMidnight), 'tomorrow');
+assert.strictEqual(todoGroup(assignment, afterDeadline), 'overdue');
+assert.strictEqual(dueBadge(assignment, false, beforeMidnight).cls, 'warn');
+assert.strictEqual(dueBadge(assignment, false, afterDeadline).cls, 'late');
 
 const beforeVisibility = listRenderCount;
 documentListeners.visibilitychange();
