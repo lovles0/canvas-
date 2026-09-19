@@ -32,7 +32,9 @@ jobs:
           python-version: "3.12"
 
       - name: Run tests
-        run: python -m unittest discover -s tests -v
+        run: |
+          python -m unittest discover -s tests -v
+          node tests/test_app_sync.js
 
       - name: Fetch from Canvas & render site
         env:
@@ -42,6 +44,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           WEEKS_BACK: "12"
+          CANVAS_WEEKS_FORWARD: "12"
         run: python fetch_canvas.py
 
       - name: Upload Pages artifact

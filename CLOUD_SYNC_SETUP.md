@@ -6,7 +6,7 @@
 
 1. 登录 [Supabase Dashboard](https://supabase.com/dashboard)。
 2. 创建一个免费项目，例如 `canvas-state`。
-3. 打开 **SQL Editor**，执行仓库根目录的 `supabase_schema.sql`。
+3. 打开 **SQL Editor**，执行仓库根目录的 `supabase_schema.sql`。已有项目也应重新执行该文件，以启用逐项目原子合并。
 
 ## 2. 获取浏览器公开配置
 
@@ -33,4 +33,3 @@
 3. 在其他设备输入同一个同步码。
 
 同步码相当于这份状态数据的密码。请保存在密码管理器中，不要公开分享。
-

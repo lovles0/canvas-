@@ -11,7 +11,7 @@ fetch_canvas.py — 从学校 Canvas 拉取课程与作业，生成 dist/data.js
 - 只读操作，只调 GET 接口，不会修改 Canvas 任何数据。
 - 使用 Python 标准库（urllib），无需 pip 安装第三方依赖，
   这样 GitHub Actions 用官方 ubuntu 镜像即可直接跑。
-- 拉取范围：所有“在读”课程 + 最近 N 周（含历史）的作业。
+- 拉取范围：所有“在读”课程 + 可配置的历史与未来周数。
 """
 
 import json
@@ -35,8 +35,13 @@ LOCAL_TZ = timezone(timedelta(hours=8))
 # 往前取多少周的历史作业（含本周）。例如 8 表示本周 + 过去 7 周。
 WEEKS_BACK = int(os.environ.get("WEEKS_BACK", "8"))
 
-# 单门课程最多拉多少条作业（控制 data.json 体积）
-MAX_ASSIGNMENTS_PER_COURSE = int(os.environ.get("MAX_ASSIGNMENTS", "100"))
+# 往后获取多少周的未来项目；Planner 与 Assignments 使用同一时间上限。
+WEEKS_FORWARD = int(os.environ.get("CANVAS_WEEKS_FORWARD", "12"))
+
+# Assignments API 单页条数；page_all() 仍会沿 Link: rel="next" 拉取全部分页。
+ASSIGNMENTS_PER_PAGE = int(
+    os.environ.get("CANVAS_ASSIGNMENTS_PER_PAGE", "100")
+)
 
 # 请求间隔，避免触发 Canvas rate limit（秒）
 REQUEST_DELAY = 0.5
@@ -325,10 +330,12 @@ def main():
 
     now = datetime.now(LOCAL_TZ)
     week_cutoff = local_week_start(now) - timedelta(weeks=WEEKS_BACK - 1)
+    future_cutoff = now + timedelta(weeks=WEEKS_FORWARD)
 
     print(f"[info] API: {API_BASE}")
     print(f"[info] 当前时间(本地): {now.isoformat()}")
     print(f"[info] 拉取范围起点(周一起): {week_cutoff.date()}")
+    print(f"[info] 拉取范围终点: {future_cutoff.isoformat()}")
 
     # 1) 拉所有在读课程
     courses = page_all("/api/v1/courses", {"enrollment_state": "active", "per_page": 100})
@@ -340,7 +347,7 @@ def main():
         "/api/v1/planner/items",
         {
             "start_date": week_cutoff.isoformat(),
-            "end_date": (now + timedelta(weeks=4)).isoformat(),
+            "end_date": future_cutoff.isoformat(),
             "per_page": 100,
         },
     )
@@ -364,7 +371,7 @@ def main():
         try:
             assignments = page_all(
                 f"/api/v1/courses/{course_id}/assignments",
-                {"per_page": MAX_ASSIGNMENTS_PER_COURSE, "completed": "false", "include[]": "submission"},
+                {"per_page": ASSIGNMENTS_PER_PAGE, "completed": "false", "include[]": "submission"},
             )
         except Exception as e:
             print(f"[warn] 课程 {course_name} 拉作业失败: {e}", file=sys.stderr)
@@ -381,8 +388,8 @@ def main():
                 due_dt = datetime.fromisoformat(due_raw.replace("Z", "+00:00")).astimezone(LOCAL_TZ)
             except Exception:
                 continue
-            # 只保留范围内的作业（历史 + 未来少量）
-            if due_dt < week_cutoff or due_dt > now + timedelta(weeks=4):
+            # 只保留统一时间范围内的作业（历史 + 配置的未来周数）。
+            if due_dt < week_cutoff or due_dt > future_cutoff:
                 continue
             completed, completion_state = assignment_completion(a)
             item_type, type_label = assignment_type(a)

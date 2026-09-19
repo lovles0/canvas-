@@ -1,10 +1,27 @@
 import json
 import unittest
+from unittest import mock
 
 import fetch_canvas
 
 
 class FetchCanvasTests(unittest.TestCase):
+    def test_default_future_window_is_twelve_weeks(self):
+        self.assertEqual(fetch_canvas.WEEKS_FORWARD, 12)
+
+    def test_page_all_follows_canvas_next_links(self):
+        responses = [
+            ([{"id": 1}], {"Link": '<https://canvas.example/items?page=2>; rel="next"'}),
+            ([{"id": 2}], {}),
+        ]
+        with mock.patch.object(fetch_canvas, "request_json", side_effect=responses) as request_json:
+            with mock.patch.object(fetch_canvas.time, "sleep"):
+                items = fetch_canvas.page_all("/items", {"per_page": 100})
+
+        self.assertEqual([item["id"] for item in items], [1, 2])
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(request_json.call_args_list[1].args[0], "https://canvas.example/items?page=2")
+
     def test_assignment_title_prefers_canvas_name(self):
         assignment = {"name": "实验报告", "title": "旧字段标题"}
         self.assertEqual(fetch_canvas.assignment_title(assignment), "实验报告")
