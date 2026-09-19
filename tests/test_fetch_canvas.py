@@ -108,6 +108,21 @@ class FetchCanvasTests(unittest.TestCase):
         })
         self.assertEqual(feed["items"], [])
 
+    def test_reminders_skip_past_due_items(self):
+        feed = fetch_canvas.build_reminders_data({
+            "generated_at": "2026-09-19T17:00:00+08:00",
+            "courses": [{
+                "id": 1,
+                "name": "神经工程",
+                "assignments": [{
+                    "id": 2,
+                    "title": "逾期作业",
+                    "due_at": "2026-09-18T20:00:00+08:00",
+                }],
+            }],
+        })
+        self.assertEqual(feed["items"], [])
+
     def test_inline_json_cannot_close_script(self):
         encoded = fetch_canvas.json_for_html_script({"name": "</script><script>alert(1)</script>"})
         self.assertNotIn("</script>", encoded)

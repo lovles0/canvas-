@@ -261,6 +261,11 @@ def html_to_text(value):
 def build_reminders_data(data):
     """生成适合 Apple 快捷指令处理的扁平提醒数据。"""
     reminders = []
+    generated_at = None
+    try:
+        generated_at = datetime.fromisoformat(str(data.get("generated_at")).replace("Z", "+00:00")).astimezone(LOCAL_TZ)
+    except (AttributeError, TypeError, ValueError):
+        pass
     for course in data.get("courses", []):
         for item in course.get("assignments", []):
             item_type = item.get("item_type") or "assignment"
@@ -275,12 +280,17 @@ def build_reminders_data(data):
             if due_at:
                 try:
                     due_datetime = datetime.fromisoformat(due_at.replace("Z", "+00:00")).astimezone(LOCAL_TZ)
+                    # 过去时间会被“添加新提醒事项”判为无效；逾期项目留在网页中展示。
+                    if generated_at and due_datetime <= generated_at:
+                        continue
                     # iOS 快捷指令在中文系统中不能稳定解析带时区的 ISO 8601 文本。
                     # 使用本地化的纯数字日期，可由“从输入中获取日期”可靠转换为日期对象。
                     due_for_shortcuts = due_datetime.strftime("%Y年%m月%d日 %H:%M")
                     remind_at = (due_datetime - timedelta(hours=24)).strftime("%Y年%m月%d日 %H:%M")
                 except (AttributeError, TypeError, ValueError):
                     pass
+            if not due_for_shortcuts:
+                continue
             description = html_to_text(item.get("description"))[:400]
             notes = f"{item.get('type_label') or '作业'} · {course.get('name') or '未命名课程'}"
             if description:
