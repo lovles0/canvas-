@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Apple 提醒事项同步设置</title>
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--ink:#1f2430;--muted:#6b7280;--line:#e5e7eb;--brand:#2563eb;--ok:#16a34a}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  main{max-width:720px;margin:auto;padding:24px 16px 64px}h1{font-size:1.5rem;margin:0 0 4px}.lead{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:12px 0}h2{font-size:1.05rem;margin:0 0 10px}ol{padding-left:1.35rem;margin:0}li+li{margin-top:8px}
+  code{background:#eef2ff;color:#3730a3;padding:2px 5px;border-radius:5px;overflow-wrap:anywhere}.url{display:block;margin:10px 0;padding:10px;background:#f8fafc;border:1px solid var(--line);border-radius:9px;word-break:break-all;font-size:.82rem}
+  button,a.btn{border:0;border-radius:10px;background:var(--brand);color:#fff;padding:10px 14px;min-height:44px;font-weight:650;text-decoration:none;display:inline-flex;align-items:center;cursor:pointer}.secondary{background:#e5e7eb!important;color:var(--ink)!important}
+  .note{font-size:.84rem;color:var(--muted)}.done{color:var(--ok)}
+</style>
+</head>
+<body><main>
+  <h1> Apple 提醒事项同步</h1>
+  <p class="lead">首次在 iPhone 上配置约 10 分钟，之后可每天自动同步。</p>
+  <div class="card">
+    <h2>一、准备提醒事项列表</h2>
+    <ol><li>打开“提醒事项”，新建列表 <code>Canvas 作业</code>。</li><li>确认“设置 → Apple 账户 → iCloud → 提醒事项”已经打开。</li></ol>
+  </div>
+  <div class="card">
+    <h2>二、新建快捷指令“同步 Canvas 作业”</h2>
+    <span class="url" id="feedUrl">https://lovles0.github.io/canvas-/reminders.json</span>
+    <button id="copyBtn">复制数据地址</button>
+    <ol style="margin-top:14px">
+      <li>添加“URL”操作，粘贴上方地址。</li>
+      <li>添加“获取 URL 内容”，请求方法保持 <code>GET</code>。</li>
+      <li>添加“获取词典值”，键填写 <code>items</code>。</li>
+      <li>添加“对每一项重复”，输入使用上一步结果。</li>
+      <li>在循环内取得 <code>uid</code>，再用“查找提醒事项”查找列表为 <code>Canvas 作业</code>、备注包含该 UID 的项目。</li>
+      <li>若没有匹配项且 <code>completed</code> 为假：使用“添加新提醒事项”，标题取 <code>title</code>，截止日期取 <code>due_at</code>，备注取 <code>notes</code>，URL 取 <code>url</code>。</li>
+      <li>若已有匹配项：使用“编辑提醒事项”同步标题、截止日期和 URL；当 <code>completed</code> 为真时，将其标记为完成。</li>
+    </ol>
+    <p class="note">不同 iOS 版本的动作名称可能略有差异；核心字段名保持不变。第一次运行时，请允许快捷指令访问网络和提醒事项。</p>
+  </div>
+  <div class="card">
+    <h2>三、设为自动运行</h2>
+    <ol><li>进入“快捷指令 → 自动化”，新建“时间”自动化。</li><li>建议设置每天 <code>08:00</code> 和 <code>20:00</code> 各运行一次。</li><li>选择“运行快捷指令”，指定“同步 Canvas 作业”。</li><li>关闭“运行前询问”，并按系统提示允许锁定时运行。</li></ol>
+  </div>
+  <div class="card"><h2>同步规则</h2><p class="note">数据包含稳定 UID，可避免重复；Canvas 中已提交、已评分、待审核或被豁免的项目会自动完成对应提醒。提醒事项中手动勾选完成不会向 Canvas 提交作业。</p></div>
+  <a class="btn secondary" href="./">返回 Canvas 待办</a>
+</main>
+<script>document.getElementById('copyBtn').onclick=async()=>{const b=document.getElementById('copyBtn');try{await navigator.clipboard.writeText(document.getElementById('feedUrl').textContent);b.textContent='已复制';b.classList.add('done')}catch(e){b.textContent='请长按地址复制'}};</script>
+</body></html>
