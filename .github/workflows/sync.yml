@@ -4,9 +4,9 @@ on:
   # main 分支更新后立即重新生成并部署
   push:
     branches: [main]
-  # 每天 00:00 (UTC+8 即 16:00 UTC) 自动拉一次
+  # 北京时间每天 00:17、08:17、14:17、20:17 自动拉取
   schedule:
-    - cron: "0 16 * * *"
+    - cron: "17 0,6,12,16 * * *"
   # 允许在 Actions 页面手动点 “Run workflow” 立刻刷新（调试用）
   workflow_dispatch:
 

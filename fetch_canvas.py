@@ -453,7 +453,7 @@ def main():
     # 3) 组装 data.json
     data = {
         "generated_at": now.isoformat(),
-        "stale_after_hours": 36,
+        "stale_after_hours": 16,
         "current_week_start": local_week_start(now).date().isoformat(),
         "timezone_offset": "+08:00",
         "courses": out_courses,

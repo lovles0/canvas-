@@ -9,6 +9,8 @@
   let syncTimer = null;
   let syncInFlight = null;
   let syncQueued = false;
+  let lastWorkflowCheck = 0;
+  let latestFailedRunAt = null;
 
   function startOfWeek(d) { const x = new Date(d), day = (x.getDay() + 6) % 7; x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x; }
   function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -282,13 +284,33 @@
     await syncCloud();
   };
 
-  const generatedAt = new Date(DATA.generated_at), staleAfter = Number(DATA.stale_after_hours || 36), staleEl = document.getElementById('stale');
+  const generatedAt = new Date(DATA.generated_at), staleAfter = Number(DATA.stale_after_hours || 16), staleEl = document.getElementById('stale');
+  const lastSuccessText = Number.isFinite(generatedAt.getTime())
+    ? generatedAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    : '时间未知';
   function updateStale(currentTime) {
     const ageHours = (currentTime - generatedAt) / 36e5;
-    staleEl.style.display = !Number.isFinite(ageHours) || ageHours > staleAfter ? 'block' : 'none';
-    staleEl.textContent = !Number.isFinite(ageHours) ? '无法确认数据更新时间，请以 Canvas 为准。' : (ageHours > staleAfter ? `数据已 ${Math.floor(ageHours)} 小时未更新，可能不是最新状态，请以 Canvas 为准。` : '');
+    const failedAfterSuccess = latestFailedRunAt && latestFailedRunAt > generatedAt;
+    staleEl.style.display = failedAfterSuccess || !Number.isFinite(ageHours) || ageHours > staleAfter ? 'block' : 'none';
+    staleEl.textContent = failedAfterSuccess
+      ? `最近一次自动更新失败；上次成功更新：${lastSuccessText}（北京时间）。当前显示的仍是上次成功获取的数据，请以 Canvas 为准。`
+      : !Number.isFinite(ageHours)
+      ? '无法确认上次成功更新时间，请以 Canvas 为准。'
+      : (ageHours > staleAfter ? `距上次成功更新已 ${Math.floor(ageHours)} 小时（${lastSuccessText}，北京时间）。自动更新可能延迟或失败，请以 Canvas 为准。` : '');
   }
-  document.getElementById('sub').textContent = `共 ${DATA.courses.length} 门课 · 更新于 ${generatedAt.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  async function checkWorkflowStatus() {
+    if (Date.now() - lastWorkflowCheck < 15 * 60 * 1000) return;
+    lastWorkflowCheck = Date.now();
+    try {
+      const response = await fetch('https://api.github.com/repos/lovles0/canvas-/actions/workflows/sync.yml/runs?per_page=5', { cache: 'no-store' });
+      if (!response.ok) return;
+      const data = await response.json();
+      const run = (Array.isArray(data.workflow_runs) ? data.workflow_runs : []).find(item => item.status === 'completed');
+      latestFailedRunAt = run?.conclusion === 'failure' ? new Date(run.created_at) : null;
+      updateStale(new Date());
+    } catch (_) {} // 无法读取运行状态时，仍按生成时间提示数据是否过期。
+  }
+  document.getElementById('sub').textContent = `共 ${DATA.courses.length} 门课 · 上次成功更新：${lastSuccessText}（北京时间）`;
   document.getElementById('foot').innerHTML = `数据由 GitHub Actions 定时从 Canvas 同步 · 时区 ${escapeHtml(TZ)} · <a href="apple-reminders.html"> Apple 提醒事项设置</a>`;
   const themeBtn = document.getElementById('themeBtn'), savedTheme = localStorage.getItem('theme'), prefersDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
   let theme = savedTheme || (prefersDark ? 'dark' : 'light');
@@ -297,13 +319,14 @@
   themeBtn.onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('theme', theme); applyTheme(theme); };
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') render();
+    if (document.visibilityState === 'visible') { render(); checkWorkflowStatus(); }
   });
   window.addEventListener('pageshow', event => {
-    if (event.persisted) render();
+    if (event.persisted) { render(); checkWorkflowStatus(); }
   });
 
   renderChips();
   render();
   syncCloud();
+  checkWorkflowStatus();
 })();

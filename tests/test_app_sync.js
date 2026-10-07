@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const data = {
   generated_at: '2026-09-19T12:00:00+08:00',
-  stale_after_hours: 36,
+  stale_after_hours: 16,
   timezone_offset: '+08:00',
   courses: [{
     id: 1,
@@ -25,6 +25,13 @@ let listRenderCount = 0;
 const documentListeners = {};
 const windowListeners = {};
 const elements = new Map();
+const workflowRuns = {
+  workflow_runs: [{
+    status: 'completed',
+    conclusion: 'failure',
+    created_at: '2026-09-19T05:00:00Z',
+  }],
+};
 
 function fakeElement(id) {
   if (elements.has(id)) return elements.get(id);
@@ -59,7 +66,13 @@ const context = {
   console,
   confirm: () => true,
   crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000000' },
-  fetch: async () => { fetchCount += 1; throw new Error('unexpected network request'); },
+  fetch: async url => {
+    fetchCount += 1;
+    if (String(url).startsWith('https://api.github.com/repos/lovles0/canvas-/actions/workflows/sync.yml/runs')) {
+      return { ok: true, json: async () => workflowRuns };
+    }
+    throw new Error('offline');
+  },
   localStorage: {
     getItem: key => storage.has(key) ? storage.get(key) : null,
     setItem: (key, value) => storage.set(key, String(value)),
@@ -85,11 +98,21 @@ context.globalThis = context;
 let source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 source = source.replace(
   '  renderChips();\n  render();',
-  '  globalThis.__testApi = { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, state, syncConfig: SYNC };\n  renderChips();\n  render();',
+  '  globalThis.__testApi = { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig: SYNC };\n  renderChips();\n  render();',
 );
 vm.runInNewContext(source, context, { filename: 'app.js' });
 
-const { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, state, syncConfig } = context.__testApi;
+const { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig } = context.__testApi;
+
+const lastSuccessLabel = '2026/9/19 12:00';
+assert.ok(fakeElement('sub').textContent.includes('上次成功更新'));
+assert.ok(fakeElement('sub').textContent.includes(lastSuccessLabel));
+updateStale(new Date('2026-09-20T06:00:00+08:00'));
+assert.strictEqual(fakeElement('stale').style.display, 'block');
+assert.ok(fakeElement('stale').textContent.includes(lastSuccessLabel));
+assert.ok(fakeElement('stale').textContent.includes('可能延迟或失败'));
+updateStale(new Date('2026-09-19T13:00:00+08:00'));
+assert.strictEqual(fakeElement('stale').style.display, 'none');
 
 const mergedDifferent = mergeGroup(
   { a: { value: true, updatedAt: 100 } },
@@ -127,7 +150,6 @@ documentListeners.visibilitychange();
 assert.strictEqual(listRenderCount, beforeVisibility + 1);
 windowListeners.pageshow({ persisted: true });
 assert.strictEqual(listRenderCount, beforeVisibility + 2);
-assert.strictEqual(fetchCount, 0);
 
 state.done.keep = { value: true, updatedAt: 300 };
 context.localStorage.setItem('canvas_state_v3', JSON.stringify(state));
@@ -138,8 +160,12 @@ syncConfig.supabase_url = 'https://supabase.example';
 syncConfig.supabase_anon_key = 'test-key';
 context.localStorage.setItem('canvas_sync_key_v1', '00000000-0000-4000-8000-000000000000');
 const stateBeforeNetworkFailure = context.localStorage.getItem('canvas_state_v3');
-performCloudSync().then(() => {
+new Promise(resolve => setImmediate(resolve)).then(async () => {
+  assert.ok(fakeElement('stale').textContent.includes('最近一次自动更新失败'));
+  assert.ok(fakeElement('stale').textContent.includes(lastSuccessLabel));
   assert.strictEqual(fetchCount, 1);
+  await performCloudSync();
+  assert.strictEqual(fetchCount, 2);
   assert.strictEqual(context.localStorage.getItem('canvas_state_v3'), stateBeforeNetworkFailure);
   console.log('app state/time tests passed');
 }).catch(error => {
