@@ -10,6 +10,7 @@
   let syncTimer = null;
   let syncInFlight = null;
   let syncQueued = false;
+  let lastSyncAttempt = 0;
   let lastWorkflowCheck = 0;
   let latestFailedRunAt = null;
 
@@ -54,7 +55,8 @@
   let showCompleted = false;
 
   function saveState() {
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    mergeStoredIntoLocal();
+    persistState();
     scheduleCloudWrite();
   }
   function stateValue(group, key) { return Boolean(state[group]?.[key]?.value); }
@@ -189,7 +191,11 @@
   }
 
   function cloudReady() { return Boolean(SYNC.supabase_url && SYNC.supabase_anon_key); }
-  function apiHeaders() { return { apikey: SYNC.supabase_anon_key, Authorization: `Bearer ${SYNC.supabase_anon_key}`, 'Content-Type': 'application/json' }; }
+  function apiHeaders() {
+    const headers = { apikey: SYNC.supabase_anon_key, 'Content-Type': 'application/json' };
+    if (!SYNC.supabase_anon_key.startsWith('sb_publishable_')) headers.Authorization = `Bearer ${SYNC.supabase_anon_key}`;
+    return headers;
+  }
   function normalizeUpdatedAt(value) {
     const timestamp = Number(value);
     return Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : 0;
@@ -216,39 +222,82 @@
     return result;
   }
   function mergeRemoteIntoLocal(remote) {
-    if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return;
-    state.done = mergeGroup(state.done, remote.done);
-    state.hidden = mergeGroup(state.hidden, remote.hidden);
+    if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return false;
+    const before = stateJSON();
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(STATE_KEY) || 'null'); } catch (_) {}
+    state.done = mergeGroup(mergeGroup(state.done, stored?.done), remote.done);
+    state.hidden = mergeGroup(mergeGroup(state.hidden, stored?.hidden), remote.hidden);
     state.version = 3;
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    persistState();
+    return before !== stateJSON();
+  }
+  function stateJSON() {
+    // 固定键顺序，避免标签页之间因 JSON 顺序不同反复触发 storage 事件。
+    return JSON.stringify(state, (_, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  }
+  function persistState() {
+    const serialized = stateJSON();
+    if (localStorage.getItem(STATE_KEY) !== serialized) localStorage.setItem(STATE_KEY, serialized);
+  }
+  function mergeStoredIntoLocal() {
+    try { return mergeRemoteIntoLocal(JSON.parse(localStorage.getItem(STATE_KEY) || 'null')); }
+    catch (_) { return false; }
+  }
+  function needsCloudWrite(remote) {
+    return ['done', 'hidden'].some(group => {
+      const remoteGroup = normalizeGroup(remote?.[group]);
+      return Object.entries(state[group]).some(([key, event]) => !remoteGroup[key] || event.updatedAt > remoteGroup[key].updatedAt);
+    });
+  }
+  async function syncRequest(name, body) {
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`${SYNC.supabase_url}/rest/v1/rpc/${name}`, {
+        method: 'POST', headers: apiHeaders(), body: JSON.stringify(body), signal: controller.signal,
+      });
+      return { ok: response.ok, status: response.status, data: response.ok && name !== 'write_canvas_state' ? await response.json() : null };
+    } finally { clearTimeout(timeout); }
   }
   async function performCloudSync() {
     const key = localStorage.getItem(SYNC_KEY);
     if (!cloudReady() || !key) return;
+    lastSyncAttempt = Date.now();
     setSyncStatus('正在同步…');
+    let changed = mergeStoredIntoLocal();
     try {
-      const read = await fetch(`${SYNC.supabase_url}/rest/v1/rpc/read_canvas_state`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ p_id: key }) });
+      const read = await syncRequest('read_canvas_state', { p_id: key });
+      if (localStorage.getItem(SYNC_KEY) !== key) return;
       if (!read.ok) throw new Error(`读取失败 ${read.status}`);
-      const remote = await read.json();
-      mergeRemoteIntoLocal(remote);
+      const remote = read.data;
+      if (remote !== null && (typeof remote !== 'object' || Array.isArray(remote))) throw new Error('读取状态格式无效');
+      changed = mergeRemoteIntoLocal(remote) || changed;
 
-      const merge = await fetch(`${SYNC.supabase_url}/rest/v1/rpc/merge_canvas_state`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ p_id: key, p_payload: state }) });
-      if (merge.ok) {
-        mergeRemoteIntoLocal(await merge.json());
-      } else if (merge.status === 404) {
-        // 兼容尚未重新执行新版 SQL 的现有部署；升级 schema 后会自动使用原子合并。
-        const write = await fetch(`${SYNC.supabase_url}/rest/v1/rpc/write_canvas_state`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ p_id: key, p_payload: state }) });
-        if (!write.ok) throw new Error(`写入失败 ${write.status}`);
-      } else {
-        throw new Error(`合并失败 ${merge.status}`);
+      if (needsCloudWrite(remote)) {
+        const merge = await syncRequest('merge_canvas_state', { p_id: key, p_payload: state });
+        if (localStorage.getItem(SYNC_KEY) !== key) return;
+        if (merge.ok) {
+          changed = mergeRemoteIntoLocal(merge.data) || changed;
+        } else if (merge.status === 404) {
+          // 兼容尚未升级 SQL 的旧部署；新版 write RPC 同样执行原子合并。
+          const write = await syncRequest('write_canvas_state', { p_id: key, p_payload: state });
+          if (localStorage.getItem(SYNC_KEY) !== key) return;
+          if (!write.ok) throw new Error(`写入失败 ${write.status}`);
+        } else {
+          throw new Error(`合并失败 ${merge.status}`);
+        }
       }
       setSyncStatus(`已同步 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
-      render();
+      if (changed) { render(); if (ignoredDialog.open) renderIgnored(); }
     } catch (error) {
-      setSyncStatus(`同步失败：${error.message}`);
+      if (localStorage.getItem(SYNC_KEY) !== key) return;
+      if (changed) { render(); if (ignoredDialog.open) renderIgnored(); }
+      setSyncStatus(`同步失败：${error.message}；本地记录已保留，恢复联网后重试`);
     }
   }
   function syncCloud() {
+    clearTimeout(syncTimer); syncTimer = null;
     if (syncInFlight) {
       syncQueued = true;
       return syncInFlight;
@@ -265,6 +314,11 @@
   function scheduleCloudWrite() {
     clearTimeout(syncTimer);
     syncTimer = setTimeout(syncCloud, 500);
+  }
+  function resumeCloudSync(force = false) {
+    if (document.visibilityState !== 'visible' || navigator.onLine === false || syncInFlight || syncTimer) return;
+    if (!force && Date.now() - lastSyncAttempt < 5000) return;
+    syncCloud();
   }
   function setSyncStatus(text) { syncStatus.textContent = text; syncBtn.textContent = text.startsWith('同步失败') ? '⚠️' : '☁️'; }
 
@@ -377,11 +431,23 @@
   themeBtn.onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('theme', theme); applyTheme(theme); };
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { render(); checkWorkflowStatus(); }
+    if (document.visibilityState === 'visible') { render(); checkWorkflowStatus(); resumeCloudSync(); }
   });
   window.addEventListener('pageshow', event => {
-    if (event.persisted) { render(); checkWorkflowStatus(); }
+    if (event.persisted) { render(); checkWorkflowStatus(); resumeCloudSync(); }
   });
+  window.addEventListener('online', () => resumeCloudSync(true));
+  window.addEventListener('storage', event => {
+    if (event.key === STATE_KEY && event.newValue) {
+      try {
+        const changed = mergeRemoteIntoLocal(JSON.parse(event.newValue));
+        if (changed) { render(); if (ignoredDialog.open) renderIgnored(); }
+      } catch (_) {} // 无效或被清除的存储不删除当前页面已有记录。
+    } else if (event.key === SYNC_KEY && event.newValue) {
+      syncCloud();
+    }
+  });
+  setInterval(resumeCloudSync, 60000);
 
   renderChips();
   render();

@@ -93,6 +93,9 @@ const context = {
   setTimeout,
   clearTimeout,
   Date,
+  AbortController,
+  navigator: { onLine: true },
+  setInterval: () => 0,
 };
 context.globalThis = context;
 
@@ -199,7 +202,7 @@ new Promise(resolve => setImmediate(resolve)).then(async () => {
   assert.strictEqual(fetchCount, 1);
   await performCloudSync();
   assert.strictEqual(fetchCount, 2);
-  assert.strictEqual(context.localStorage.getItem('canvas_state_v3'), stateBeforeNetworkFailure);
+  assert.deepStrictEqual(JSON.parse(context.localStorage.getItem('canvas_state_v3')), JSON.parse(stateBeforeNetworkFailure));
   console.log('app state/time tests passed');
 }).catch(error => {
   console.error(error);

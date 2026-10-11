@@ -1,5 +1,8 @@
 -- 在 Supabase SQL Editor 中执行一次。
 -- 同步码是随机 UUID，相当于这条状态记录的密码；函数只允许按完整同步码读写。
+-- 这是持有码访问，不是账号登录：不要公开同步码。privileged 函数放在非 API schema。
+
+create schema if not exists private;
 
 create table if not exists public.canvas_state (
   id uuid primary key,
@@ -8,13 +11,13 @@ create table if not exists public.canvas_state (
 );
 
 alter table public.canvas_state enable row level security;
-revoke all on table public.canvas_state from anon, authenticated;
+revoke all on table public.canvas_state from public, anon, authenticated;
 
 create or replace function public.canvas_event_updated_at(p_event jsonb)
 returns numeric
 language plpgsql
 immutable
-set search_path = public
+set search_path = ''
 as $$
 declare
   raw_value text;
@@ -36,7 +39,7 @@ create or replace function public.merge_canvas_group(p_current jsonb, p_incoming
 returns jsonb
 language plpgsql
 immutable
-set search_path = public
+set search_path = ''
 as $$
 declare
   result jsonb := case when jsonb_typeof(p_current) = 'object' then p_current else '{}'::jsonb end;
@@ -60,7 +63,7 @@ create or replace function public.merge_canvas_payload(p_current jsonb, p_incomi
 returns jsonb
 language plpgsql
 immutable
-set search_path = public
+set search_path = ''
 as $$
 declare
   current_payload jsonb := case when jsonb_typeof(p_current) = 'object' then p_current else '{}'::jsonb end;
@@ -75,18 +78,22 @@ begin
 end;
 $$;
 
-create or replace function public.merge_canvas_state(p_id uuid, p_payload jsonb)
+create or replace function private.merge_canvas_state(p_id uuid, p_payload jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   current_payload jsonb;
   merged_payload jsonb;
 begin
+  if p_id is null or substring(p_id::text, 15, 1) <> '4'
+     or substring(p_id::text, 20, 1) not in ('8', '9', 'a', 'b') then
+    raise exception 'invalid sync key' using errcode = '22023';
+  end if;
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' or pg_column_size(p_payload) > 262144 then
-    raise exception 'invalid payload';
+    raise exception 'invalid payload' using errcode = '22023';
   end if;
 
   insert into public.canvas_state(id)
@@ -107,32 +114,63 @@ begin
 end;
 $$;
 
+create or replace function private.read_canvas_state(p_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_id is null or substring(p_id::text, 15, 1) <> '4'
+     or substring(p_id::text, 20, 1) not in ('8', '9', 'a', 'b') then
+    raise exception 'invalid sync key' using errcode = '22023';
+  end if;
+  return (select payload from public.canvas_state where id = p_id);
+end;
+$$;
+
+create or replace function public.merge_canvas_state(p_id uuid, p_payload jsonb)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.merge_canvas_state(p_id, p_payload);
+$$;
+
 create or replace function public.read_canvas_state(p_id uuid)
 returns jsonb
 language sql
-security definer
-set search_path = public
+security invoker
+set search_path = ''
 as $$
-  select payload from public.canvas_state where id = p_id;
+  select private.read_canvas_state(p_id);
 $$;
 
 create or replace function public.write_canvas_state(p_id uuid, p_payload jsonb)
 returns void
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = ''
 as $$
 begin
   perform public.merge_canvas_state(p_id, p_payload);
 end;
 $$;
 
-revoke all on function public.canvas_event_updated_at(jsonb) from public;
-revoke all on function public.merge_canvas_group(jsonb, jsonb) from public;
-revoke all on function public.merge_canvas_payload(jsonb, jsonb) from public;
+revoke all on function public.canvas_event_updated_at(jsonb) from public, anon, authenticated;
+revoke all on function public.merge_canvas_group(jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.merge_canvas_payload(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.merge_canvas_state(uuid, jsonb) from public;
 revoke all on function public.read_canvas_state(uuid) from public;
 revoke all on function public.write_canvas_state(uuid, jsonb) from public;
+revoke all on function private.merge_canvas_state(uuid, jsonb) from public;
+revoke all on function private.read_canvas_state(uuid) from public;
+grant usage on schema private to anon, authenticated;
+grant execute on function private.merge_canvas_state(uuid, jsonb) to anon, authenticated;
+grant execute on function private.read_canvas_state(uuid) to anon, authenticated;
 grant execute on function public.merge_canvas_state(uuid, jsonb) to anon, authenticated;
 grant execute on function public.read_canvas_state(uuid) to anon, authenticated;
 grant execute on function public.write_canvas_state(uuid, jsonb) to anon, authenticated;
+
+notify pgrst, 'reload schema';

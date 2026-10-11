@@ -2,6 +2,7 @@ import json
 import contextlib
 import io
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,29 @@ import fetch_canvas
 
 
 class FetchCanvasTests(unittest.TestCase):
+    def test_sync_public_config_fallback_and_legacy_env_override(self):
+        public_config = {"supabase_url": "https://public.supabase.co", "supabase_anon_key": "sb_publishable_test"}
+        for env_url, env_key, expected_url, expected_key in (
+            ("", "", "https://public.supabase.co", "sb_publishable_test"),
+            ("https://legacy.supabase.co/", "legacy-anon", "https://legacy.supabase.co", "legacy-anon"),
+            ("https://legacy.supabase.co", "", "https://legacy.supabase.co", ""),
+            ("", "legacy-anon", "", "legacy-anon"),
+        ):
+            with self.subTest(env_url=env_url), tempfile.TemporaryDirectory() as output:
+                with mock.patch.object(fetch_canvas, "API_BASE", "https://canvas.example"), \
+                     mock.patch.object(fetch_canvas, "TOKEN", "test-only-token"), \
+                     mock.patch.object(fetch_canvas, "OUT_DIR", output), \
+                     mock.patch.object(fetch_canvas, "page_all", return_value=[]), \
+                     mock.patch.object(fetch_canvas.time, "sleep"), \
+                     mock.patch.object(fetch_canvas.json, "load", return_value=public_config), \
+                     mock.patch.dict(os.environ, {"SUPABASE_URL": env_url, "SUPABASE_ANON_KEY": env_key}), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    fetch_canvas.main()
+                html = Path(output, "index.html").read_text(encoding="utf-8")
+                config = json.loads(re.search(r'<script[^>]*id="sync-config"[^>]*>(.*?)</script>', html, re.S).group(1))
+                self.assertEqual(config["supabase_url"], expected_url)
+                self.assertEqual(config["supabase_anon_key"], expected_key)
+
     def test_manual_refresh_metadata_is_published_without_secrets(self):
         request_id = "c1541234-1234-4123-8123-123456789abc"
         with tempfile.TemporaryDirectory() as output:

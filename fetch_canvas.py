@@ -490,10 +490,16 @@ def main():
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public-config.json")
     with open(config_path, "r", encoding="utf-8") as f:
         public_config = json.load(f)
+    sync_url = os.environ.get("SUPABASE_URL", "")
+    sync_key = os.environ.get("SUPABASE_ANON_KEY", "")
+    # 配置必须成对选取，不能混用不同项目的 URL 和公开 key。
+    if not sync_url and not sync_key:
+        sync_url = public_config.get("supabase_url", "")
+        sync_key = public_config.get("supabase_anon_key", "")
     sync_config = {
-        "supabase_url": os.environ.get("SUPABASE_URL", "").rstrip("/"),
-        # Supabase anon key 设计为浏览器公开值；权限由数据库函数限制。
-        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
+        "supabase_url": sync_url.rstrip("/"),
+        # 兼容旧 anon key 和新版 publishable key；二者均为浏览器公开值。
+        "supabase_anon_key": sync_key,
         # 只有触发入口 URL 是公开配置；两个自定义 Secrets 绝不内联进网页。
         "refresh_url": os.environ.get("CANVAS_REFRESH_URL", public_config.get("refresh_url", "")),
     }

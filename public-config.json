@@ -1,3 +1,5 @@
 {
-  "refresh_url": "https://qdtbkzhcnwjsjlivyxyy.supabase.co/functions/v1/canvas-refresh"
+  "refresh_url": "https://qdtbkzhcnwjsjlivyxyy.supabase.co/functions/v1/canvas-refresh",
+  "supabase_url": "https://qdtbkzhcnwjsjlivyxyy.supabase.co",
+  "supabase_anon_key": "sb_publishable_bV7kHNugiouKOxotscWilw_EKWkLgm8"
 }
