@@ -1,11 +1,12 @@
 (function () {
   'use strict';
 
-  const DATA = JSON.parse(document.getElementById('data').textContent);
+  let DATA = JSON.parse(document.getElementById('data').textContent);
   const SYNC = JSON.parse(document.getElementById('sync-config').textContent);
   const TZ = DATA.timezone_offset || '+08:00';
   const STATE_KEY = 'canvas_state_v3';
   const SYNC_KEY = 'canvas_sync_key_v1';
+  const REFRESH_KEY = 'canvas_refresh_key_v1';
   let syncTimer = null;
   let syncInFlight = null;
   let syncQueued = false;
@@ -284,10 +285,67 @@
     await syncCloud();
   };
 
-  const generatedAt = new Date(DATA.generated_at), staleAfter = Number(DATA.stale_after_hours || 16), staleEl = document.getElementById('stale');
-  const lastSuccessText = Number.isFinite(generatedAt.getTime())
-    ? generatedAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
-    : '时间未知';
+  let generatedAt = new Date(DATA.generated_at), staleAfter = Number(DATA.stale_after_hours || 16), lastSuccessText;
+  const staleEl = document.getElementById('stale');
+  function updateSnapshotLabel() {
+    lastSuccessText = Number.isFinite(generatedAt.getTime())
+      ? generatedAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+      : '时间未知';
+    document.getElementById('sub').textContent = `共 ${DATA.courses.length} 门课 · 上次成功更新：${lastSuccessText}（北京时间）`;
+  }
+  function applyLatestData(latest) {
+    if (!window.CanvasRefresh.validSnapshot(latest)) throw new Error('新数据格式无效，已保留旧任务');
+    const allSelected = activeCourses.size === DATA.courses.length, scrollTop = window.scrollY;
+    DATA = latest;
+    activeCourses = new Set(latest.courses.filter(c => allSelected || activeCourses.has(String(c.id))).map(c => String(c.id)));
+    generatedAt = new Date(latest.generated_at);
+    staleAfter = Number(latest.stale_after_hours || 16);
+    updateSnapshotLabel();
+    renderChips(); render();
+    if (ignoredDialog.open) renderIgnored();
+    if (typeof window.scrollTo === 'function') window.scrollTo(0, scrollTop);
+  }
+
+  const refreshBtn = document.getElementById('refreshBtn'), refreshStatus = document.getElementById('refreshStatus'), refreshDialog = document.getElementById('refreshDialog'), refreshKeyInput = document.getElementById('refreshKeyInput'), refreshKeyStatus = document.getElementById('refreshKeyStatus');
+  function setRefreshProgress(phase, error) {
+    const busy = phase === 'requesting' || phase === 'waiting';
+    refreshBtn.disabled = busy;
+    refreshBtn.setAttribute('aria-busy', String(busy));
+    refreshBtn.textContent = busy ? '更新中…' : '从 Canvas 更新';
+    refreshStatus.textContent = phase === 'requesting' ? '正在请求更新…' : phase === 'waiting' ? '正在从 Canvas 抓取并发布，可能需要几分钟；可以继续查看任务。' : phase === 'success' ? '已更新为最新任务' : `更新未完成：${error?.message || '网络连接失败，请稍后重试'}。当前任务已保留。`;
+  }
+  const canvasRefresher = SYNC.refresh_url && window.CanvasRefresh
+    ? window.CanvasRefresh.createRefresher({ endpoint: SYNC.refresh_url, applyData: applyLatestData, onProgress: setRefreshProgress }) : null;
+  function openRefreshSettings() {
+    refreshKeyInput.value = localStorage.getItem(REFRESH_KEY) || '';
+    refreshKeyStatus.textContent = '';
+    refreshDialog.showModal();
+  }
+  async function refreshCanvas() {
+    if (!canvasRefresher) { refreshStatus.textContent = '云端刷新入口尚未配置'; return; }
+    const key = localStorage.getItem(REFRESH_KEY);
+    if (!key) { openRefreshSettings(); return; }
+    try { await canvasRefresher.refresh(key); }
+    catch (error) {
+      if (error.status === 401) {
+        openRefreshSettings();
+        refreshKeyStatus.textContent = '刷新码不正确，请填写 Supabase 中 CANVAS_REFRESH_KEY 的值。';
+      }
+    }
+  }
+  refreshBtn.onclick = refreshCanvas;
+  document.getElementById('refreshSettings').onclick = openRefreshSettings;
+  document.getElementById('saveRefreshKey').onclick = async () => {
+    const key = refreshKeyInput.value.trim();
+    if (!/^[\x21-\x7e]{32,256}$/.test(key)) {
+      refreshKeyStatus.textContent = '请填写至少 32 位的刷新码（不含空格或中文），不是 GitHub Token。';
+      refreshKeyInput.focus(); return;
+    }
+    try { localStorage.setItem(REFRESH_KEY, key); }
+    catch (_) { refreshKeyStatus.textContent = '无法在此浏览器保存刷新码，请检查隐私设置。'; return; }
+    refreshDialog.close();
+    await refreshCanvas();
+  };
   function updateStale(currentTime) {
     const ageHours = (currentTime - generatedAt) / 36e5;
     const failedAfterSuccess = latestFailedRunAt && latestFailedRunAt > generatedAt;
@@ -310,7 +368,7 @@
       updateStale(new Date());
     } catch (_) {} // 无法读取运行状态时，仍按生成时间提示数据是否过期。
   }
-  document.getElementById('sub').textContent = `共 ${DATA.courses.length} 门课 · 上次成功更新：${lastSuccessText}（北京时间）`;
+  updateSnapshotLabel();
   document.getElementById('foot').innerHTML = `数据由 GitHub Actions 定时从 Canvas 同步 · 时区 ${escapeHtml(TZ)} · <a href="apple-reminders.html"> Apple 提醒事项设置</a>`;
   const themeBtn = document.getElementById('themeBtn'), savedTheme = localStorage.getItem('theme'), prefersDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
   let theme = savedTheme || (prefersDark ? 'dark' : 'light');

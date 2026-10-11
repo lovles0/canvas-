@@ -453,6 +453,8 @@ def main():
     # 3) 组装 data.json
     data = {
         "generated_at": now.isoformat(),
+        "refresh_request_id": os.environ.get("CANVAS_REFRESH_REQUEST_ID", ""),
+        "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
         "stale_after_hours": 16,
         "current_week_start": local_week_start(now).date().isoformat(),
         "timezone_offset": "+08:00",
@@ -477,10 +479,15 @@ def main():
         template = f.read()
     # JSON 位于 <script> 中，必须转义 HTML 特殊字符，避免 Canvas 文本提前闭合脚本标签。
     inline_json = json_for_html_script(data)
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public-config.json")
+    with open(config_path, "r", encoding="utf-8") as f:
+        public_config = json.load(f)
     sync_config = {
         "supabase_url": os.environ.get("SUPABASE_URL", "").rstrip("/"),
         # Supabase anon key 设计为浏览器公开值；权限由数据库函数限制。
         "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
+        # 只有触发入口 URL 是公开配置；两个自定义 Secrets 绝不内联进网页。
+        "refresh_url": os.environ.get("CANVAS_REFRESH_URL", public_config.get("refresh_url", "")),
     }
     html = (
         template
@@ -492,10 +499,11 @@ def main():
         f.write(html)
     print(f"[ok] 已生成 {html_path}")
 
-    app_source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.js")
-    app_output = os.path.join(OUT_DIR, "app.js")
-    shutil.copyfile(app_source, app_output)
-    print(f"[ok] 已生成 {app_output}")
+    for script in ("app.js", "refresh.js"):
+        app_source = os.path.join(os.path.dirname(os.path.abspath(__file__)), script)
+        app_output = os.path.join(OUT_DIR, script)
+        shutil.copyfile(app_source, app_output)
+        print(f"[ok] 已生成 {app_output}")
 
     guide_template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apple-reminders.html")
     guide_output = os.path.join(OUT_DIR, "apple-reminders.html")

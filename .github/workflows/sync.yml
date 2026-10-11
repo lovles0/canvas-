@@ -9,6 +9,11 @@ on:
     - cron: "17 0,6,12,16 * * *"
   # 允许在 Actions 页面手动点 “Run workflow” 立刻刷新（调试用）
   workflow_dispatch:
+    inputs:
+      refresh_request_id:
+        description: Website refresh request identifier
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,6 +40,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           node tests/test_app_sync.js
+          node --test tests/test_refresh_client.js tests/test_refresh_gateway.mjs
 
       - name: Fetch from Canvas & render site
         env:
@@ -43,6 +49,7 @@ jobs:
           CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CANVAS_REFRESH_REQUEST_ID: ${{ inputs.refresh_request_id }}
           WEEKS_BACK: "12"
           CANVAS_WEEKS_FORWARD: "12"
         run: python fetch_canvas.py

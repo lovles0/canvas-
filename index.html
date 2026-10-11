@@ -24,6 +24,10 @@
   h1{font-size:1.3rem;margin:0;font-weight:750}
   .sub{color:var(--muted);font-size:.8rem;margin-top:2px}
   .header-actions{display:flex;align-items:center;gap:8px}
+  .refreshbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .refreshbar .btn{min-height:44px}.refreshbar .refresh-settings{min-height:44px}
+  .refresh-status{flex:1 1 200px;min-width:0;font-size:.8rem;color:var(--ink);overflow-wrap:anywhere}
+  #refreshBtn:disabled{opacity:.6;cursor:wait}
   .iconbtn,.weeknav{border:1px solid var(--line);background:var(--card);color:var(--ink);width:44px;height:44px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
   .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--line);padding:4px;border-radius:12px;margin-bottom:12px}
   .tab{border:0;background:transparent;color:var(--muted);min-height:40px;border-radius:9px;cursor:pointer;font-weight:650}
@@ -72,6 +76,7 @@
     <div class="header-actions"><button class="iconbtn" id="syncBtn" title="同步设置" aria-label="同步设置">☁️</button><button class="iconbtn" id="themeBtn" title="切换深浅色" aria-label="切换深浅色">🌙</button></div>
   </header>
   <div class="stale" id="stale" role="status"></div>
+  <div class="refreshbar"><button class="btn" id="refreshBtn" type="button">从 Canvas 更新</button><button class="completion-toggle refresh-settings" id="refreshSettings" type="button">刷新设置</button><span class="refresh-status" id="refreshStatus" role="status" aria-live="polite"></span></div>
   <div class="tabs" role="tablist" aria-label="查看方式">
     <button class="tab" id="todoTab" role="tab">待办</button>
     <button class="tab" id="weekTab" role="tab">按周</button>
@@ -90,6 +95,8 @@
 <script id="sync-config" type="application/json">__SYNC_CONFIG__</script>
 <dialog id="ignoredDialog"><div class="dialog-head"><h2>已永久忽略</h2><button class="btn" data-close="ignoredDialog">关闭</button></div><div class="dialog-body" id="ignoredList"></div></dialog>
 <dialog id="syncDialog"><div class="dialog-head"><h2>跨设备同步</h2><button class="btn" data-close="syncDialog">关闭</button></div><div class="dialog-body"><div class="field"><label for="syncKeyInput">同步码</label><input id="syncKeyInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="在所有设备输入同一个同步码"></div><p class="hint">同步码相当于密码，请勿分享。首次使用可生成一个；其他设备输入同一个同步码即可共享完成和忽略状态。</p><div class="sync-status" id="syncStatus"></div></div><div class="dialog-actions"><button class="btn" id="generateSyncKey">生成同步码</button><button class="btn primary" id="saveSyncKey">保存并同步</button></div></dialog>
+<dialog id="refreshDialog"><div class="dialog-head"><h2>刷新设置</h2><button class="btn" data-close="refreshDialog">关闭</button></div><div class="dialog-body"><div class="field"><label for="refreshKeyInput">刷新码</label><input id="refreshKeyInput" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" aria-describedby="refreshKeyHint refreshKeyStatus" placeholder="填写你自行保存的 CANVAS_REFRESH_KEY"></div><p class="hint" id="refreshKeyHint">填写 Supabase 中 CANVAS_REFRESH_KEY 的值，不是 GitHub Token，也不是跨设备同步码。仅需每台设备输入一次，保存在当前浏览器；不要分享。</p><div class="sync-status" id="refreshKeyStatus" role="status"></div></div><div class="dialog-actions"><button class="btn" id="saveRefreshKey" type="button">保存并更新</button></div></dialog>
+<script src="refresh.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

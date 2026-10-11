@@ -1,0 +1,3 @@
+[functions.canvas-refresh]
+# handler.mjs 内有自定义认证；公开 publishable key 本身不授予刷新权限。
+verify_jwt = false

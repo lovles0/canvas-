@@ -86,6 +86,7 @@ const context = {
     addEventListener: (name, handler) => { documentListeners[name] = handler; },
   },
   window: {
+    CanvasRefresh: require('../refresh.js'),
     matchMedia: () => ({ matches: false }),
     addEventListener: (name, handler) => { windowListeners[name] = handler; },
   },
@@ -95,14 +96,14 @@ const context = {
 };
 context.globalThis = context;
 
-let source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+let source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
 source = source.replace(
   '  renderChips();\n  render();',
-  '  globalThis.__testApi = { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig: SYNC };\n  renderChips();\n  render();',
+  '  globalThis.__testApi = { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig: SYNC, applyLatestData: typeof applyLatestData === "function" ? applyLatestData : null };\n  renderChips();\n  render();',
 );
 vm.runInNewContext(source, context, { filename: 'app.js' });
 
-const { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig } = context.__testApi;
+const { mergeGroup, mergeRemoteIntoLocal, performCloudSync, dueBadge, todoGroup, updateStale, state, syncConfig, applyLatestData } = context.__testApi;
 
 const lastSuccessLabel = '2026/9/19 12:00';
 assert.ok(fakeElement('sub').textContent.includes('上次成功更新'));
@@ -155,6 +156,19 @@ state.done.keep = { value: true, updatedAt: 300 };
 context.localStorage.setItem('canvas_state_v3', JSON.stringify(state));
 mergeRemoteIntoLocal(null);
 assert.strictEqual(state.done.keep.value, true);
+
+assert.strictEqual(typeof applyLatestData, 'function', '刷新后必须能在原页面显示新快照');
+applyLatestData({ ...data, generated_at: '2026-09-20T12:00:00+08:00', courses: [{
+  ...data.courses[0], assignments: [{ ...data.courses[0].assignments[0], title: '刚刚从 Canvas 更新的作业' }],
+}] });
+assert.ok(fakeElement('list').innerHTML.includes('刚刚从 Canvas 更新的作业'));
+assert.ok(fakeElement('sub').textContent.includes('2026/9/20 12:00'));
+assert.strictEqual(state.done.keep.value, true);
+const listBeforeBadData = fakeElement('list').innerHTML;
+assert.throws(() => applyLatestData({ generated_at: 'invalid', courses: [] }));
+assert.strictEqual(fakeElement('list').innerHTML, listBeforeBadData);
+// 恢复原快照，让既有更新失败提示测试继续使用原来的时间。
+applyLatestData(data);
 
 syncConfig.supabase_url = 'https://supabase.example';
 syncConfig.supabase_anon_key = 'test-key';

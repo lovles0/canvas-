@@ -1,11 +1,36 @@
 import json
+import contextlib
+import io
+import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import fetch_canvas
 
 
 class FetchCanvasTests(unittest.TestCase):
+    def test_manual_refresh_metadata_is_published_without_secrets(self):
+        request_id = "c1541234-1234-4123-8123-123456789abc"
+        with tempfile.TemporaryDirectory() as output:
+            with mock.patch.object(fetch_canvas, "API_BASE", "https://canvas.example"), \
+                 mock.patch.object(fetch_canvas, "TOKEN", "test-only-canvas-token"), \
+                 mock.patch.object(fetch_canvas, "OUT_DIR", output), \
+                 mock.patch.object(fetch_canvas, "page_all", return_value=[]), \
+                 mock.patch.object(fetch_canvas.time, "sleep"), \
+                 mock.patch.dict(os.environ, {"CANVAS_REFRESH_REQUEST_ID": request_id, "GITHUB_RUN_ID": "42", "CANVAS_REFRESH_URL": "https://project.supabase.co/functions/v1/canvas-refresh", "GITHUB_ACTIONS_TOKEN": "test-only-secret"}), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                fetch_canvas.main()
+            data = json.loads(Path(output, "data.json").read_text(encoding="utf-8"))
+            self.assertEqual(data.get("refresh_request_id"), request_id)
+            self.assertEqual(data.get("workflow_run_id"), "42")
+            html = Path(output, "index.html").read_text(encoding="utf-8")
+            self.assertIn("https://project.supabase.co/functions/v1/canvas-refresh", html)
+            self.assertNotIn("test-only-secret", html)
+            self.assertNotIn("test-only-canvas-token", html)
+            self.assertTrue(Path(output, "refresh.js").is_file())
+
     def test_default_future_window_is_twelve_weeks(self):
         self.assertEqual(fetch_canvas.WEEKS_FORWARD, 12)
 
