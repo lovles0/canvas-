@@ -42,6 +42,7 @@ jobs:
           node tests/test_app_sync.js
           node --test tests/test_refresh_client.js tests/test_refresh_gateway.mjs
           node --test tests/test_sync_lifecycle.js
+          node --test tests/test_snapshot_updates.js
 
       - name: Fetch from Canvas & render site
         env:

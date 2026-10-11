@@ -39,6 +39,7 @@ function app({ local = empty(), remote = empty(), key = keyA, read, apiKey = 'sb
     clearInterval: id => timers.delete(id),
     fetch: async (url, options = {}) => {
       if (String(url).startsWith('https://api.github.com/')) return { ok: true, json: async () => ({ workflow_runs: [] }) };
+      if (String(url).startsWith('data.json?')) return { ok: true, json: async () => JSON.parse(element('data').textContent) };
       const body = JSON.parse(options.body);
       calls.push({ url, body, headers: options.headers });
       if (url.endsWith('/read_canvas_state')) {

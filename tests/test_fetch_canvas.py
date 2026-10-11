@@ -12,6 +12,20 @@ import fetch_canvas
 
 
 class FetchCanvasTests(unittest.TestCase):
+    def test_generated_site_versions_javascript_assets(self):
+        with tempfile.TemporaryDirectory() as output:
+            with mock.patch.object(fetch_canvas, "API_BASE", "https://canvas.example"), \
+                 mock.patch.object(fetch_canvas, "TOKEN", "test-only-token"), \
+                 mock.patch.object(fetch_canvas, "OUT_DIR", output), \
+                 mock.patch.object(fetch_canvas, "page_all", return_value=[]), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                fetch_canvas.main()
+            html = Path(output, "index.html").read_text(encoding="utf-8")
+            for script in ("app.js", "refresh.js"):
+                match = re.search(rf'src="{re.escape(script)}\?v=([0-9a-f]{{16}})"', html)
+                self.assertIsNotNone(match, "新版 HTML 必须引用带版本的脚本，避免 Safari 使用旧代码")
+                self.assertTrue(Path(output, script).is_file())
+
     def test_sync_public_config_fallback_and_legacy_env_override(self):
         public_config = {"supabase_url": "https://public.supabase.co", "supabase_anon_key": "sb_publishable_test"}
         for env_url, env_key, expected_url, expected_key in (

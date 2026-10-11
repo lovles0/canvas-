@@ -7,12 +7,17 @@
   const STATE_KEY = 'canvas_state_v3';
   const SYNC_KEY = 'canvas_sync_key_v1';
   const REFRESH_KEY = 'canvas_refresh_key_v1';
+  const SEEN_ITEMS_KEY = 'canvas_seen_items_v1';
   let syncTimer = null;
   let syncInFlight = null;
   let syncQueued = false;
   let lastSyncAttempt = 0;
   let lastWorkflowCheck = 0;
   let latestFailedRunAt = null;
+  let snapshotInFlight = null;
+  let lastSnapshotCheck = 0;
+  let seenSnapshot = null;
+  const pendingChanges = new Map();
 
   function startOfWeek(d) { const x = new Date(d), day = (x.getDay() + 6) % 7; x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x; }
   function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -165,6 +170,7 @@
     ignoredToggle.textContent = `已忽略（${ignored}）`;
     updateStale(currentTime);
     bindCards();
+    renderChanges();
   }
   function renderChips() {
     chipsEl.innerHTML = '';
@@ -347,17 +353,91 @@
       : '时间未知';
     document.getElementById('sub').textContent = `共 ${DATA.courses.length} 门课 · 上次成功更新：${lastSuccessText}（北京时间）`;
   }
+  const changesNotice = document.getElementById('changesNotice'), changesSummary = document.getElementById('changesSummary'), changesDialog = document.getElementById('changesDialog'), changesList = document.getElementById('changesList');
+  function readSeenSnapshot() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SEEN_ITEMS_KEY) || 'null');
+      if (saved?.version === 1 && Number.isFinite(Date.parse(saved.generated_at)) && saved.items && typeof saved.items === 'object' && !Array.isArray(saved.items)
+        && Object.values(saved.items).every(due => due === null || (typeof due === 'number' && Number.isFinite(due)))) return saved;
+    } catch (_) {}
+    return null;
+  }
+  function isNewerSnapshot(latest, current) {
+    const timestamp = Date.parse(latest.generated_at), currentTimestamp = Date.parse(current.generated_at);
+    const run = Number(latest.workflow_run_id), currentRun = Number(current.workflow_run_id);
+    return !Number.isFinite(currentTimestamp) || timestamp > currentTimestamp || (timestamp === currentTimestamp
+      && (Number.isSafeInteger(run) && run > 0 ? run : 0) > (Number.isSafeInteger(currentRun) && currentRun > 0 ? currentRun : 0));
+  }
+  function recordSnapshotChanges() {
+    const stored = readSeenSnapshot();
+    if (stored && (!seenSnapshot || isNewerSnapshot(stored, seenSnapshot))) seenSnapshot = stored;
+    // 旧缓存页面不得倒退另一个标签页已经记录的基线；首次访问仅建立基线。
+    if (seenSnapshot && !isNewerSnapshot(DATA, seenSnapshot)) return;
+    const items = {};
+    allItems().forEach(({ c, a }) => {
+      const key = itemKey(c, a), due = a.due_at ? Date.parse(a.due_at) : null;
+      items[key] = due;
+      const previous = pendingChanges.get(key), newItem = seenSnapshot && !Object.prototype.hasOwnProperty.call(seenSnapshot.items, key);
+      const oldDue = previous ? previous.oldDue : seenSnapshot?.items[key];
+      if (previous || (seenSnapshot && (newItem || oldDue !== due))) {
+        const change = { key, title: a.title, course: c.name, newItem: Boolean(previous?.newItem || newItem), oldDue, due };
+        if (!change.newItem && oldDue === due) pendingChanges.delete(key);
+        else pendingChanges.set(key, change);
+      }
+    });
+    seenSnapshot = { version: 1, generated_at: DATA.generated_at, workflow_run_id: DATA.workflow_run_id || '', items };
+    try { localStorage.setItem(SEEN_ITEMS_KEY, JSON.stringify(seenSnapshot)); } catch (_) {} // 存储受限不影响任务更新。
+  }
+  function changeDueText(due) {
+    return due == null ? '无截止时间' : new Date(due).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  function renderChangeDetails() {
+    changesList.innerHTML = [...pendingChanges.values()].map(change => `<div class="change-row"><div class="change-title">${escapeHtml(change.title)}</div><div class="hint">${escapeHtml(change.course)} · ${change.newItem ? '新增任务' : '截止时间变更'}</div><div class="change-due">${change.newItem ? '' : `原：${escapeHtml(changeDueText(change.oldDue))}<br>`}${change.newItem ? '截止：' : '现：'}${escapeHtml(changeDueText(change.due))}</div></div>`).join('') || '<div class="empty">没有待查看的任务变更</div>';
+  }
+  function renderChanges() {
+    const currentItems = new Map(allItems().map(row => [itemKey(row.c, row.a), row]));
+    pendingChanges.forEach((_, key) => {
+      const row = currentItems.get(key);
+      if (!row || isHidden(row.c, row.a) || isDone(row.c, row.a)) pendingChanges.delete(key);
+    });
+    const changes = [...pendingChanges.values()], added = changes.filter(change => change.newItem).length, changed = changes.length - added;
+    const summary = [added ? `新增 ${added} 项` : '', changed ? `截止时间变更 ${changed} 项` : ''].filter(Boolean).join(' · ');
+    if (changesSummary.textContent !== summary) changesSummary.textContent = summary;
+    changesNotice.hidden = changes.length === 0;
+    if (changesDialog.open) renderChangeDetails();
+  }
+  document.getElementById('viewChanges').onclick = () => { renderChangeDetails(); changesDialog.showModal(); };
+  document.getElementById('dismissChanges').onclick = () => { pendingChanges.clear(); renderChanges(); };
   function applyLatestData(latest) {
     if (!window.CanvasRefresh.validSnapshot(latest)) throw new Error('新数据格式无效，已保留旧任务');
+    // 自动读取与手动更新可能同时返回，绝不让旧响应覆盖已经显示的新快照。
+    if (!isNewerSnapshot(latest, DATA)) return false;
     const allSelected = activeCourses.size === DATA.courses.length, scrollTop = window.scrollY;
     DATA = latest;
     activeCourses = new Set(latest.courses.filter(c => allSelected || activeCourses.has(String(c.id))).map(c => String(c.id)));
     generatedAt = new Date(latest.generated_at);
     staleAfter = Number(latest.stale_after_hours || 16);
+    recordSnapshotChanges();
     updateSnapshotLabel();
     renderChips(); render();
     if (ignoredDialog.open) renderIgnored();
     if (typeof window.scrollTo === 'function') window.scrollTo(0, scrollTop);
+    return true;
+  }
+  function resumeSnapshot(force = false) {
+    if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
+    if (snapshotInFlight) return snapshotInFlight;
+    if (!force && Date.now() - lastSnapshotCheck < 5000) return;
+    lastSnapshotCheck = Date.now();
+    snapshotInFlight = (async () => {
+      const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 20000);
+      try {
+        const response = await fetch(`data.json?t=${lastSnapshotCheck}`, { cache: 'no-store', signal: controller.signal });
+        if (response.ok) applyLatestData(await response.json());
+      } catch (_) {} // 自动检查失败时保留快照和所有本地记录，不打断查看任务。
+      finally { clearTimeout(timeout); }
+    })().finally(() => { snapshotInFlight = null; });
+    return snapshotInFlight;
   }
 
   const refreshBtn = document.getElementById('refreshBtn'), refreshStatus = document.getElementById('refreshStatus'), refreshDialog = document.getElementById('refreshDialog'), refreshKeyInput = document.getElementById('refreshKeyInput'), refreshKeyStatus = document.getElementById('refreshKeyStatus');
@@ -431,12 +511,12 @@
   themeBtn.onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('theme', theme); applyTheme(theme); };
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { render(); checkWorkflowStatus(); resumeCloudSync(); }
+    if (document.visibilityState === 'visible') { render(); checkWorkflowStatus(); resumeCloudSync(); resumeSnapshot(); }
   });
   window.addEventListener('pageshow', event => {
-    if (event.persisted) { render(); checkWorkflowStatus(); resumeCloudSync(); }
+    if (event.persisted) { render(); checkWorkflowStatus(); resumeCloudSync(); resumeSnapshot(); }
   });
-  window.addEventListener('online', () => resumeCloudSync(true));
+  window.addEventListener('online', () => { resumeCloudSync(true); resumeSnapshot(true); });
   window.addEventListener('storage', event => {
     if (event.key === STATE_KEY && event.newValue) {
       try {
@@ -448,9 +528,12 @@
     }
   });
   setInterval(resumeCloudSync, 60000);
+  setInterval(resumeSnapshot, 5 * 60 * 1000);
 
+  recordSnapshotChanges();
   renderChips();
   render();
   syncCloud();
   checkWorkflowStatus();
+  resumeSnapshot();
 })();

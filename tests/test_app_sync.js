@@ -68,6 +68,7 @@ const context = {
   crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000000' },
   fetch: async url => {
     fetchCount += 1;
+    if (String(url).startsWith('data.json?')) return { ok: true, json: async () => data };
     if (String(url).startsWith('https://api.github.com/repos/lovles0/canvas-/actions/workflows/sync.yml/runs')) {
       return { ok: true, json: async () => workflowRuns };
     }
@@ -172,7 +173,7 @@ assert.throws(() => applyLatestData({ generated_at: 'invalid', courses: [] }));
 assert.strictEqual(fakeElement('list').innerHTML, listBeforeBadData);
 
 // Canvas 互评完成状态沿用现有已完成视图，不丢弃仍待完成的互评。
-applyLatestData({ ...data, courses: [{ ...data.courses[0], assignments: [{
+applyLatestData({ ...data, generated_at: '2026-09-21T12:00:00+08:00', courses: [{ ...data.courses[0], assignments: [{
   id: 'assessment_request:542480', source_id: 542480, title: '已完成的互评',
   item_type: 'assessment_request', type_label: '互评', completed: true,
   completion_state: 'peer_review_completed', due_at: '2026-10-12T20:00:00+08:00',
@@ -189,8 +190,9 @@ assert.ok(fakeElement('list').innerHTML.includes('已完成的互评'));
 assert.ok(fakeElement('list').innerHTML.includes('Canvas 已完成'));
 assert.ok(fakeElement('list').innerHTML.includes('aria-label="Canvas 已完成" disabled'));
 fakeElement('completedToggle').onclick();
-// 恢复原快照，让既有更新失败提示测试继续使用原来的时间。
-applyLatestData(data);
+// 新快照只能向前推进；仍验证后续工作流失败提示和网络失败保留状态。
+applyLatestData({ ...data, generated_at: '2026-09-21T13:00:00+08:00' });
+workflowRuns.workflow_runs[0].created_at = '2026-09-21T06:00:00Z';
 
 syncConfig.supabase_url = 'https://supabase.example';
 syncConfig.supabase_anon_key = 'test-key';
@@ -198,10 +200,10 @@ context.localStorage.setItem('canvas_sync_key_v1', '00000000-0000-4000-8000-0000
 const stateBeforeNetworkFailure = context.localStorage.getItem('canvas_state_v3');
 new Promise(resolve => setImmediate(resolve)).then(async () => {
   assert.ok(fakeElement('stale').textContent.includes('最近一次自动更新失败'));
-  assert.ok(fakeElement('stale').textContent.includes(lastSuccessLabel));
-  assert.strictEqual(fetchCount, 1);
-  await performCloudSync();
+  assert.ok(fakeElement('stale').textContent.includes('2026/9/21 13:00'));
   assert.strictEqual(fetchCount, 2);
+  await performCloudSync();
+  assert.strictEqual(fetchCount, 3);
   assert.deepStrictEqual(JSON.parse(context.localStorage.getItem('canvas_state_v3')), JSON.parse(stateBeforeNetworkFailure));
   console.log('app state/time tests passed');
 }).catch(error => {

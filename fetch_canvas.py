@@ -15,6 +15,7 @@ fetch_canvas.py — 从学校 Canvas 拉取课程与作业，生成 dist/data.js
 """
 
 import json
+import hashlib
 import os
 import shutil
 import sys
@@ -508,6 +509,11 @@ def main():
         .replace("__DATA_JSON__", inline_json)
         .replace("__SYNC_CONFIG__", json_for_html_script(sync_config))
     )
+    # HTML 与脚本一起发布；内容版本避免浏览器沿用上次缓存的旧逻辑。
+    for script in ("app.js", "refresh.js"):
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), script), "rb") as source:
+            version = hashlib.sha256(source.read()).hexdigest()[:16]
+        html = html.replace(f'src="{script}"', f'src="{script}?v={version}"')
     html_path = os.path.join(OUT_DIR, "index.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)
