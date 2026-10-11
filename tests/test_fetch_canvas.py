@@ -98,6 +98,54 @@ class FetchCanvasTests(unittest.TestCase):
             (False, "missing"),
         )
 
+    def test_completed_peer_review_uses_its_own_workflow_state(self):
+        for submissions in (False, True, None, {}, {"missing": True}):
+            with self.subTest(submissions=submissions):
+                item = fetch_canvas.planner_item_to_output({
+                    "course_id": 1,
+                    "plannable_id": 542480,
+                    "plannable_type": "assessment_request",
+                    "plannable_date": "2026-10-12T12:00:00Z",
+                    "plannable": {"title": "课程互评", "workflow_state": "completed"},
+                    "submissions": submissions,
+                })
+                self.assertTrue(item["completed"])
+                self.assertEqual(item["completion_state"], "peer_review_completed")
+                self.assertEqual(item["id"], "assessment_request:542480")
+
+    def test_assigned_peer_review_stays_open(self):
+        for workflow_state in ("assigned", "", None):
+            with self.subTest(workflow_state=workflow_state):
+                self.assertEqual(fetch_canvas.planner_item_completion({
+                    "plannable_type": "assessment_request",
+                    "plannable": {"workflow_state": workflow_state},
+                    "submissions": False,
+                }), (False, "unsubmitted"))
+
+    def test_peer_review_completion_preserves_planner_override(self):
+        self.assertEqual(fetch_canvas.planner_item_completion({
+            "plannable_type": "assessment_request",
+            "plannable": {"workflow_state": "completed"},
+            "planner_override": {"marked_complete": True},
+        }), (True, "planner_marked_complete"))
+
+    def test_object_workflow_state_does_not_complete_other_planner_types(self):
+        for item_type in ("assignment", "quiz", "discussion_topic", "planner_note", "peer_review_sub_assignment"):
+            with self.subTest(item_type=item_type):
+                self.assertEqual(fetch_canvas.planner_item_completion({
+                    "plannable_type": item_type,
+                    "plannable": {"workflow_state": "completed"},
+                    "submissions": False,
+                }), (False, "unsubmitted"))
+
+    def test_peer_review_handles_missing_or_invalid_plannable(self):
+        for plannable in (None, [], "invalid"):
+            with self.subTest(plannable=plannable):
+                self.assertEqual(fetch_canvas.planner_item_completion({
+                    "plannable_type": "assessment_request",
+                    "plannable": plannable,
+                }), (False, "unsubmitted"))
+
     def test_planner_item_normalizes_quiz(self):
         item = fetch_canvas.planner_item_to_output({
             "course_id": 1,

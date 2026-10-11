@@ -167,6 +167,25 @@ assert.strictEqual(state.done.keep.value, true);
 const listBeforeBadData = fakeElement('list').innerHTML;
 assert.throws(() => applyLatestData({ generated_at: 'invalid', courses: [] }));
 assert.strictEqual(fakeElement('list').innerHTML, listBeforeBadData);
+
+// Canvas 互评完成状态沿用现有已完成视图，不丢弃仍待完成的互评。
+applyLatestData({ ...data, courses: [{ ...data.courses[0], assignments: [{
+  id: 'assessment_request:542480', source_id: 542480, title: '已完成的互评',
+  item_type: 'assessment_request', type_label: '互评', completed: true,
+  completion_state: 'peer_review_completed', due_at: '2026-10-12T20:00:00+08:00',
+}, {
+  id: 'assessment_request:546066', source_id: 546066, title: '待完成的互评',
+  item_type: 'assessment_request', type_label: '互评', completed: false,
+  due_at: '2026-10-13T20:00:00+08:00',
+}] }] });
+assert.ok(!fakeElement('list').innerHTML.includes('已完成的互评'));
+assert.ok(fakeElement('list').innerHTML.includes('待完成的互评'));
+assert.strictEqual(fakeElement('completedToggle').hidden, false);
+fakeElement('completedToggle').onclick();
+assert.ok(fakeElement('list').innerHTML.includes('已完成的互评'));
+assert.ok(fakeElement('list').innerHTML.includes('Canvas 已完成'));
+assert.ok(fakeElement('list').innerHTML.includes('aria-label="Canvas 已完成" disabled'));
+fakeElement('completedToggle').onclick();
 // 恢复原快照，让既有更新失败提示测试继续使用原来的时间。
 applyLatestData(data);
 

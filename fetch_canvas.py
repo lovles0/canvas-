@@ -189,10 +189,18 @@ PLANNER_TYPE_LABELS = {
 
 
 def planner_item_completion(item):
-    """使用 Planner 覆盖状态和当前用户提交状态判断是否完成。"""
+    """使用 Planner 覆盖状态、互评工作流和当前用户提交状态判断是否完成。"""
     override = item.get("planner_override") or {}
     if override.get("marked_complete"):
         return True, "planner_marked_complete"
+
+    # AssessmentRequest 的 workflow_state 是互评完成状态；普通项目的同名字段
+    # 通常表示发布状态，不能据此判断当前用户是否完成。
+    plannable = item.get("plannable") or {}
+    if (str(item.get("plannable_type") or "").lower() == "assessment_request"
+            and isinstance(plannable, dict)
+            and str(plannable.get("workflow_state") or "").lower() == "completed"):
+        return True, "peer_review_completed"
 
     submission = item.get("submissions") or {}
     if not isinstance(submission, dict):
